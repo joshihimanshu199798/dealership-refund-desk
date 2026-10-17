@@ -7,6 +7,8 @@ class AppSmokeTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory()
         os.environ['DATABASE_PATH']=str(Path(self.tmp.name)/'test.db')
         os.environ['UPLOAD_DIR']=str(Path(self.tmp.name)/'uploads')
+        os.environ['DEMO_MODE']='true'
+        os.environ['SECRET_KEY']='test-secret'
         import app as app_module
         app_module.DB_PATH=Path(os.environ['DATABASE_PATH'])
         app_module.UPLOAD_DIR=Path(os.environ['UPLOAD_DIR'])
