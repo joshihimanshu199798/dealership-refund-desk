@@ -129,6 +129,24 @@ def add_attachments(con,rid,saved):
 @app.context_processor
 def globals_for_templates(): return {'STATUSES':STATUSES}
 
+@app.cli.command('create-user')
+def create_user_command():
+    """Create a named application user interactively; run only in a trusted environment."""
+    import click
+    name=click.prompt('Full name')
+    email=click.prompt('Email').strip().lower()
+    role=click.prompt('Role',type=click.Choice(['sales','accounts','admin'],case_sensitive=False)).lower()
+    password=click.prompt('Password',hide_input=True,confirmation_prompt=True)
+    if len(password)<12:
+        raise click.ClickException('Password must be at least 12 characters.')
+    try:
+        with db() as con:
+            con.execute('INSERT INTO users(name,email,password_hash,role) VALUES(?,?,?,?)',
+                        (name,email,generate_password_hash(password),role))
+    except sqlite3.IntegrityError:
+        raise click.ClickException('That email already exists.')
+    click.echo(f'Created {role} user: {email}')
+
 @app.route('/healthz')
 def healthz(): return {'status':'ok'},200
 
