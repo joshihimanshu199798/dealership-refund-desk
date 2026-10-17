@@ -8,6 +8,12 @@ services:
     envVars:
       - key: SECRET_KEY
         generateValue: true
+      - key: FLASK_ENV
+        value: production
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: DEMO_MODE
+        value: "false"
       - key: DATABASE_PATH
         value: /data/refund_desk.db
       - key: UPLOAD_DIR
