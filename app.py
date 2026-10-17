@@ -14,8 +14,18 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 ALLOWED = {'pdf','png','jpg','jpeg','webp','doc','docx','xls','xlsx','eml','txt'}
 MAX_BYTES = 10 * 1024 * 1024
 app = Flask(__name__)
-app.secret_key = os.getenv('SECRET_KEY', 'dev-only-change-this-before-deployment')
-app.config['MAX_CONTENT_LENGTH'] = MAX_BYTES
+# Production must provide a secret key; never silently use a predictable fallback.
+_secret = os.getenv('SECRET_KEY')
+if not _secret and os.getenv('FLASK_ENV') == 'production':
+    raise RuntimeError('SECRET_KEY must be set in production.')
+app.secret_key = _secret or 'local-development-only-not-for-deployment'
+app.config.update(
+    MAX_CONTENT_LENGTH=MAX_BYTES,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    SESSION_COOKIE_SECURE=os.getenv('COOKIE_SECURE', 'false').lower() in ('1','true','yes'),
+    PERMANENT_SESSION_LIFETIME=__import__('datetime').timedelta(hours=8),
+)
 STATUSES = ['Submitted','Under Review','Documents Required','Approved for Payment','Payment Processed','Closed','Rejected']
 
 def db():
@@ -36,7 +46,9 @@ def init_db():
         CREATE TABLE IF NOT EXISTS audit_log(id INTEGER PRIMARY KEY AUTOINCREMENT, request_id INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id), created_at TEXT NOT NULL, action TEXT NOT NULL, details TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS notification_log(id INTEGER PRIMARY KEY AUTOINCREMENT, request_id INTEGER REFERENCES requests(id) ON DELETE SET NULL, recipient TEXT NOT NULL, subject TEXT NOT NULL, created_at TEXT NOT NULL, outcome TEXT NOT NULL, detail TEXT NOT NULL);
         """)
-        if con.execute('SELECT COUNT(*) FROM users').fetchone()[0] == 0:
+        # Demo credentials are seeded only when explicitly opted in for local testing.
+        # Never create known default accounts automatically on a public deployment.
+        if os.getenv('DEMO_MODE', 'false').lower() in ('1','true','yes') and con.execute('SELECT COUNT(*) FROM users').fetchone()[0] == 0:
             demos=[('Demo Sales Executive','sales@example.com','SalesDemo123!','sales'),('Demo Accounts User','accounts@example.com','AccountsDemo123!','accounts'),('Demo Administrator','admin@example.com','AdminDemo123!','admin')]
             con.executemany('INSERT INTO users(name,email,password_hash,role) VALUES(?,?,?,?)',[(n,e,generate_password_hash(p),r) for n,e,p,r in demos])
 
@@ -129,7 +141,7 @@ def login():
         email=request.form.get('email','').strip().lower(); password=request.form.get('password','')
         with db() as con: user=con.execute('SELECT * FROM users WHERE lower(email)=?',(email,)).fetchone()
         if user and check_password_hash(user['password_hash'],password):
-            session.clear(); session.update(user_id=user['id'],name=user['name'],role=user['role'],email=user['email'])
+            session.clear(); session.update(user_id=user['id'],name=user['name'],role=user['role'],email=user['email']); session.permanent = True
             return redirect(url_for('dashboard'))
         flash('Email or password is incorrect.','error')
     return render_template('login.html')
