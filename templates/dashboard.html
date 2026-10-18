@@ -10,6 +10,35 @@
   {% if session.role in ['sales','admin'] %}<a class="btn btn-primary" href="{{ url_for('new_request') }}">＋ New refund request</a>{% endif %}
   {% if session.role == 'admin' %}<a class="btn btn-secondary" href="{{ url_for('admin_users') }}">Manage employees</a>{% endif %}
 </div>
+{% if view == 'analytics' %}
+<section class="analytics-grid">
+  <div class="analytics-kpi"><span>Requested refund value</span><strong>₹{{ '{:,.0f}'.format(analytics.requested_total) }}</strong><small>Across your permitted portfolio</small></div>
+  <div class="analytics-kpi"><span>Processed / closed value</span><strong>₹{{ '{:,.0f}'.format(analytics.processed_total) }}</strong><small>Based on recorded processed amounts</small></div>
+  <div class="analytics-kpi"><span>Open requests</span><strong>{{ analytics.open_count }}</strong><small>Not processed, closed, or rejected</small></div>
+  <div class="analytics-kpi"><span>Average request age</span><strong>{{ analytics.avg_age }} days</strong><small>All requests in your portfolio</small></div>
+</section>
+<div class="analytics-columns">
+  <section class="panel"><div class="analytics-heading"><div><h2>Six-month trend</h2><p class="muted">Request volume and requested value by creation month.</p></div></div>
+    {% set max_month_value = analytics.months|map(attribute='value')|max if analytics.months else 0 %}
+    <div class="analytics-bars">{% for month in analytics.months %}<div class="analytics-bar-row"><div class="analytics-bar-label"><strong>{{ month.label }}</strong><span>{{ month.count }} requests · ₹{{ '{:,.0f}'.format(month.value) }}</span></div><div class="analytics-track"><span style="width:{{ (month.value / max_month_value * 100) if max_month_value else 0 }}%"></span></div></div>{% endfor %}</div>
+  </section>
+  <section class="panel"><h2>Refund status distribution</h2><p class="muted">Current request count by workflow stage.</p>
+    {% set max_status_count = analytics.statuses|map(attribute='count')|max if analytics.statuses else 0 %}
+    <div class="analytics-bars">{% for item in analytics.statuses %}<div class="analytics-bar-row"><div class="analytics-bar-label"><strong>{{ item.name }}</strong><span>{{ item.count }}</span></div><div class="analytics-track"><span style="width:{{ (item.count / max_status_count * 100) if max_status_count else 0 }}%"></span></div></div>{% else %}<p class="empty">No requests to analyse yet.</p>{% endfor %}</div>
+  </section>
+  <section class="panel analytics-wide"><h2>Branch / location exposure</h2><p class="muted">Top locations by total requested refund value. Unspecified locations are grouped together.</p>
+    <div class="table-wrap"><table><thead><tr><th>Location</th><th>Requests</th><th>Requested value</th></tr></thead><tbody>{% for branch in analytics.branches %}<tr><td>{{ branch.name }}</td><td>{{ branch.count }}</td><td class="money">₹{{ '{:,.2f}'.format(branch.value) }}</td></tr>{% else %}<tr><td colspan="3" class="empty">No branch data available.</td></tr>{% endfor %}</tbody></table></div>
+  </section>
+</div>
+<div class="analytics-note">Reporting uses the requests visible to your role. Requested value is not the same as approved liability; processed value uses recorded payment amounts.</div>
+{% else %}
+{% if view != "requests" %}
+<section class="panel control-centre"><div class="control-centre-head"><div><div class="eyebrow">PRIORITY WORK QUEUE</div><h2>Smart Refund Control Centre</h2><p class="muted">Actionable alerts from your permitted portfolio, sorted by urgency.</p></div><a class="btn btn-secondary btn-small" href="{{ url_for('dashboard',view='analytics') }}">View analytics</a></div>
+  {% if priority_alerts %}<div class="alert-list">{% for alert in priority_alerts %}<a class="alert-item alert-priority-{{ alert.priority }}" href="{{ alert.url }}"><span class="alert-symbol">{% if alert.title == 'CEO decision required' %}✓{% elif alert.title == 'Missing documents' %}▤{% elif alert.title == 'SLA overdue' %}◷{% else %}₹{% endif %}</span><span class="alert-copy"><strong>{{ alert.title }}</strong><small>{{ alert.detail }}</small></span><span class="alert-value">₹{{ '{:,.0f}'.format(alert.amount) }}</span><span class="alert-arrow">→</span></a>{% endfor %}</div>
+  {% else %}<div class="control-centre-clear"><span>✓</span><div><strong>No priority alerts right now</strong><small>There are no open cases currently matching these alert rules.</small></div></div>{% endif %}
+  <div class="control-centre-foot">High-value threshold: ₹{{ '{:,.0f}'.format(high_value_threshold) }} · Overdue threshold: {{ sla_days }} days · Alerts are guidance, not approval decisions.</div>
+</section>
+{% endif %}
 {% if view != "requests" %}<div class="stat-grid">
   <a class="stat-card stat-card-link" href="{{ url_for('dashboard',view='requests') }}"><span>{% if session.role == 'sales' %}My requests{% else %}Requests in view{% endif %}</span><strong>{{ dashboard_stats.total }}</strong><small>Open the full request list</small></a>
   <a class="stat-card stat-card-link" href="{{ url_for('dashboard',view='requests') }}"><span>Total requested value</span><strong>₹{{ '{:,.0f}'.format(dashboard_stats.total_value) }}</strong><small>Open requests behind this total</small></a>
@@ -74,4 +103,5 @@
   (function(){var all=document.getElementById('select-all-pending');if(!all)return;all.addEventListener('change',function(){document.querySelectorAll('.bulk-request-check:not(:disabled)').forEach(function(c){c.checked=all.checked;});});})();
   </script>
 </section>
+{% endif %}
 {% endblock %}
