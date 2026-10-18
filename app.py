@@ -331,6 +331,8 @@ def logout(): session.clear(); return redirect(url_for('login'))
 @app.route('/dashboard')
 @login_required
 def dashboard():
+    view=request.args.get('view','overview').strip().lower()
+    if view not in ('overview','requests'): view='overview'
     q=request.args.get('q','').strip()
     status=request.args.get('status','').strip()
     sort=request.args.get('sort','newest').strip().lower()
@@ -393,7 +395,7 @@ def dashboard():
         'avg_age':round(sum(all_ages)/len(all_ages),1) if all_ages else 0,
         'awaiting_accounts':sum(1 for r in all_rows if r['ceo_approved'] and r['status'] not in ('Payment Processed','Closed','Rejected')),
     }
-    return render_template('dashboard.html',requests=visible,counts=counts,dashboard_stats=dashboard_stats,q=q,selected_status=status,sort=sort,approval_filter=approval_filter,overdue_count=overdue_count,overdue_only=request.args.get('overdue')=='1',sla_days=sla_days)
+    return render_template('dashboard.html',requests=visible,counts=counts,dashboard_stats=dashboard_stats,q=q,selected_status=status,sort=sort,approval_filter=approval_filter,overdue_count=overdue_count,overdue_only=request.args.get('overdue')=='1',sla_days=sla_days,view=view)
 
 
 @app.route('/requests/ceo-bulk-approve', methods=['POST'])
