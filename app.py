@@ -215,7 +215,7 @@ def create_user_command():
     import click
     name=click.prompt('Full name')
     email=click.prompt('Email').strip().lower()
-    role=click.prompt('Role',type=click.Choice(['sales','cashier','accounts','admin'],case_sensitive=False)).lower()
+    role=click.prompt('Role',type=click.Choice(['sales','accounts','admin'],case_sensitive=False)).lower()
     password=click.prompt('Password',hide_input=True,confirmation_prompt=True)
     if len(password)<12:
         raise click.ClickException('Password must be at least 12 characters.')
@@ -249,10 +249,11 @@ def login():
     if request.method=='POST':
         email=request.form.get('email','').strip().lower(); password=request.form.get('password','')
         login_role=request.form.get('login_role','')
-        allowed_login_roles={'sales': {'sales'}, 'cashier': {'cashier'}, 'staff': {'accounts','admin'}}
+        allowed_login_roles={'sales': {'sales'}, 'accounts': {'accounts','cashier'}, 'admin': {'admin'}}
         with db() as con: user=con.execute('SELECT * FROM users WHERE lower(email)=?',(email,)).fetchone()
         if user and check_password_hash(user['password_hash'],password) and user['role'] in allowed_login_roles.get(login_role,set()):
-            session.clear(); session.update(user_id=user['id'],name=user['name'],role=user['role'],email=user['email']); session.permanent = True
+            effective_role = 'accounts' if user['role'] == 'cashier' else user['role']
+            session.clear(); session.update(user_id=user['id'],name=user['name'],role=effective_role,email=user['email']); session.permanent = True
             return redirect(url_for('dashboard'))
         flash('Email, password, or selected login type is incorrect. Choose the login option assigned to your account.','error')
     return render_template('login.html')
@@ -283,7 +284,7 @@ def admin_users():
         email = request.form.get('email', '').strip().lower()
         role = request.form.get('role', '').strip()
         password = request.form.get('password', '')
-        if not name or not email or role not in ('sales', 'cashier', 'accounts', 'admin'):
+        if not name or not email or role not in ('sales', 'accounts', 'admin'):
             flash('Enter a name, valid email, and role.', 'error')
         elif len(password) < 12:
             flash('Password must be at least 12 characters.', 'error')
@@ -303,6 +304,25 @@ def admin_users():
     with db() as con:
         users = con.execute('SELECT id,name,email,role FROM users ORDER BY role,name').fetchall()
     return render_template('admin_users.html', users=users)
+
+@app.route('/admin/users/<int:user_id>/password', methods=['POST'])
+@roles_required('admin')
+def admin_change_password(user_id):
+    password=request.form.get('password','')
+    if len(password)<12:
+        flash('New password must be at least 12 characters.','error')
+    elif user_id == session.get('user_id'):
+        flash('For security, use a separate password-change flow for your own administrator account.','error')
+    else:
+        try:
+            with db() as con:
+                cur=con.execute('UPDATE users SET password_hash=? WHERE id=?',(generate_password_hash(password),user_id))
+                if getattr(cur,'rowcount',0): flash('Password updated. The employee must use the new password next time.','success')
+                else: flash('Employee account not found.','error')
+        except Exception:
+            logging.exception('Admin password reset failed')
+            flash('Password could not be updated. Check server logs.','error')
+    return redirect(url_for('admin_users'))
 
 @app.route('/requests/new',methods=['GET','POST'])
 @roles_required('sales','admin')
