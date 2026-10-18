@@ -3,6 +3,8 @@ from datetime import datetime
 from email.message import EmailMessage
 from functools import wraps
 from pathlib import Path
+from io import BytesIO
+from flask import send_file
 from flask import Flask, render_template, request, redirect, url_for, session, flash, send_from_directory, abort
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -11,6 +13,20 @@ BASE = Path(__file__).resolve().parent
 DB_PATH = Path(os.getenv('DATABASE_PATH', BASE / 'refund_desk.db'))
 UPLOAD_DIR = Path(os.getenv('UPLOAD_DIR', BASE / 'uploads'))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+SUPABASE_URL = os.getenv('SUPABASE_URL', '').strip()
+SUPABASE_SERVICE_ROLE_KEY = os.getenv('SUPABASE_SERVICE_ROLE_KEY', '').strip()
+SUPABASE_STORAGE_BUCKET = os.getenv('SUPABASE_STORAGE_BUCKET', 'refund-attachments').strip()
+_supabase = None
+
+def storage_client():
+    """Return the configured Supabase service client, or None for local development."""
+    global _supabase
+    if not (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY):
+        return None
+    if _supabase is None:
+        from supabase import create_client
+        _supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    return _supabase
 ALLOWED = {'pdf','png','jpg','jpeg','webp','doc','docx','xls','xlsx','eml','txt'}
 MAX_BYTES = 10 * 1024 * 1024
 app = Flask(__name__)
@@ -76,7 +92,7 @@ def init_db():
         with db() as con:
             con.executescript("""
             CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('sales','accounts','admin')));
-            CREATE TABLE IF NOT EXISTS requests(id INTEGER PRIMARY KEY AUTOINCREMENT, request_no TEXT UNIQUE NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, created_by INTEGER NOT NULL REFERENCES users(id), assigned_to TEXT, customer_name TEXT, customer_phone TEXT, customer_email TEXT, booking_no TEXT, vehicle_model TEXT, vin TEXT, refund_type TEXT NOT NULL, requested_amount REAL NOT NULL, reason TEXT NOT NULL, bank_name TEXT, account_last4 TEXT, status TEXT NOT NULL, priority TEXT NOT NULL DEFAULT 'Normal', payment_date TEXT, utr TEXT, processed_amount REAL, closure_note TEXT);
+            CREATE TABLE IF NOT EXISTS requests(id INTEGER PRIMARY KEY AUTOINCREMENT, request_no TEXT UNIQUE NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, created_by INTEGER NOT NULL REFERENCES users(id), assigned_to TEXT, customer_name TEXT NOT NULL, customer_phone TEXT, customer_email TEXT, booking_no TEXT, vehicle_model TEXT, vin TEXT, refund_type TEXT NOT NULL, requested_amount REAL NOT NULL, reason TEXT NOT NULL, bank_name TEXT, account_last4 TEXT, status TEXT NOT NULL, priority TEXT NOT NULL DEFAULT 'Normal', payment_date TEXT, utr TEXT, processed_amount REAL, closure_note TEXT);
             CREATE TABLE IF NOT EXISTS comments(id INTEGER PRIMARY KEY AUTOINCREMENT, request_id INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id), created_at TEXT NOT NULL, visibility TEXT NOT NULL DEFAULT 'Internal', body TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS attachments(id INTEGER PRIMARY KEY AUTOINCREMENT, request_id INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE, uploaded_by INTEGER NOT NULL REFERENCES users(id), created_at TEXT NOT NULL, original_name TEXT NOT NULL, stored_name TEXT NOT NULL, category TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS audit_log(id INTEGER PRIMARY KEY AUTOINCREMENT, request_id INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id), created_at TEXT NOT NULL, action TEXT NOT NULL, details TEXT NOT NULL);
@@ -155,7 +171,16 @@ def save_uploads(files, rid, category='Supporting document'):
         if not f or not f.filename: continue
         original=secure_filename(f.filename); ext=original.rsplit('.',1)[-1].lower() if '.' in original else ''
         if ext not in ALLOWED: raise ValueError(f'File type not allowed: {original}')
-        stored=f'{uuid.uuid4().hex}.{ext}'; f.save(UPLOAD_DIR/stored); saved.append((original,stored,category))
+        stored=f'{uuid.uuid4().hex}.{ext}'
+        client = storage_client()
+        if client:
+            content_type = f.mimetype or 'application/octet-stream'
+            client.storage.from_(SUPABASE_STORAGE_BUCKET).upload(
+                stored, f.read(), {'content-type': content_type, 'upsert': 'false'}
+            )
+        else:
+            f.save(UPLOAD_DIR/stored)
+        saved.append((original,stored,category))
     return saved
 
 def add_attachments(con,rid,saved):
@@ -320,6 +345,14 @@ def download_attachment(aid):
         a=con.execute('SELECT a.*,r.created_by FROM attachments a JOIN requests r ON r.id=a.request_id WHERE a.id=?',(aid,)).fetchone()
         if not a: abort(404)
         if session['role']=='sales' and a['created_by']!=session['user_id']: abort(403)
+    client = storage_client()
+    if client:
+        try:
+            content = client.storage.from_(SUPABASE_STORAGE_BUCKET).download(a['stored_name'])
+        except Exception:
+            logging.exception('Private attachment download failed')
+            abort(404)
+        return send_file(BytesIO(content), as_attachment=True, download_name=a['original_name'])
     return send_from_directory(UPLOAD_DIR,a['stored_name'],as_attachment=True,download_name=a['original_name'])
 
 @app.errorhandler(413)
