@@ -22,7 +22,7 @@ The Render blueprint uses the free web-service plan. Free hosting has limits and
 2. In Supabase Storage, create a **private** bucket named `refund-attachments`.
 3. Deploy this repository on Render using `render.yaml`.
 4. In Render Environment, set `DATABASE_URL`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY`. Set SMTP values only if email notifications are needed.
-5. Create real app users through the trusted environment using `flask --app app create-user`; do not enable demo users in production.
+5. Create real app users through the trusted environment using `flask --app app create-user`; valid roles are `sales`, `cashier`, `accounts`, and `admin`. The login screen has separate Sales Executive, Cashier, and Accounts/Administrator choices; the chosen login type must match the account role. Do not enable demo users in production.
 6. Verify login, role boundaries, request creation, attachment upload/download, database persistence, and email delivery before using real data.
 
 ## Local checks
