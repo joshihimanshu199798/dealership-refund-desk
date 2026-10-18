@@ -33,7 +33,7 @@
 </div>
 <div class="stat-grid">
   {% for s in ['Pending CEO Approval','CEO Approved','Submitted','Under Review','Documents Required','Approved for Payment','Payment Processed','Closed','Rejected'] %}
-    <a class="stat-card stat-card-link {% if selected_status==s %}stat-card-active{% endif %}" href="{{ url_for('dashboard',status='' if selected_status==s else s,q=q,sort=sort) }}" aria-label="Show {{ counts[s] }} requests with status {{ s }}">
+    <a class="stat-card stat-card-link {% if selected_status==s %}stat-card-active{% endif %}" href="{{ url_for('dashboard',status='' if selected_status==s else s,q=q,sort=sort,approval=approval_filter) }}" aria-label="Show {{ counts[s] }} requests with status {{ s }}">
       <span>{{ s }}</span><strong>{{ counts[s] }}</strong><small>{% if selected_status==s %}Showing this status · Tap to clear{% else %}Filter by status{% endif %}</small>
     </a>
   {% endfor %}
@@ -50,6 +50,7 @@
     <input name="q" value="{{ q }}" placeholder="Search request, customer code, location or UTR…">
     {% if overdue_only %}<input type="hidden" name="overdue" value="1">{% endif %}
     <label class="sort-control">Sort by<select name="sort"><option value="newest" {% if sort=='newest' %}selected{% endif %}>Newest first</option><option value="oldest" {% if sort=='oldest' %}selected{% endif %}>Oldest first</option></select></label>
+    {% if session.role == 'accounts' %}<select name="approval" aria-label="CEO approval queue"><option value="all" {% if approval_filter=='all' %}selected{% endif %}>All CEO approval states</option><option value="approved" {% if approval_filter=='approved' %}selected{% endif %}>CEO-approved requests</option><option value="pending" {% if approval_filter=='pending' %}selected{% endif %}>Awaiting CEO approval</option></select>{% endif %}
     <select name="status"><option value="">All statuses</option>{% for s in STATUSES %}<option value="{{ s }}" {% if selected_status==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
     <button class="btn btn-secondary">Filter</button><a class="btn btn-ghost" href="{{ url_for('dashboard') }}">Reset</a>
   </form>
