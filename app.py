@@ -276,16 +276,27 @@ def logout(): session.clear(); return redirect(url_for('login'))
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    q=request.args.get('q','').strip(); status=request.args.get('status','').strip()
-    sql='SELECT r.*,u.name AS requester FROM requests r JOIN users u ON u.id=r.created_by WHERE 1=1'; args=[]
-    if session['role']=='sales': sql+=' AND r.created_by=?'; args.append(session['user_id'])
-    if q: sql+=' AND (r.request_no LIKE ? OR r.customer_name LIKE ? OR r.customer_code LIKE ? OR r.request_location LIKE ? OR r.utr LIKE ?)'; args += [f'%{q}%']*5
-    if status and status in STATUSES: sql+=' AND r.status=?'; args.append(status)
-    sql+=" ORDER BY CASE r.priority WHEN 'Urgent' THEN 0 WHEN 'High' THEN 1 ELSE 2 END, r.created_at DESC"
+    q=request.args.get('q','').strip()
+    status=request.args.get('status','').strip()
+    sort=request.args.get('sort','newest').strip().lower()
+    if sort not in ('newest','oldest'):
+        sort='newest'
+    sql='SELECT r.*,u.name AS requester FROM requests r JOIN users u ON u.id=r.created_by WHERE 1=1'
+    args=[]
+    if session['role']=='sales':
+        sql+=' AND r.created_by=?'
+        args.append(session['user_id'])
+    if q:
+        sql+=' AND (r.request_no LIKE ? OR r.customer_name LIKE ? OR r.customer_code LIKE ? OR r.request_location LIKE ? OR r.utr LIKE ?)'
+        args += [f'%{q}%']*5
+    if status and status in STATUSES:
+        sql+=' AND r.status=?'
+        args.append(status)
+    sql += " ORDER BY created_at " + ("ASC" if sort=='oldest' else "DESC") + ", id " + ("ASC" if sort=='oldest' else "DESC")
     with db() as con:
         rows=con.execute(sql,args).fetchall()
         counts={s:con.execute('SELECT COUNT(*) AS count FROM requests'+(' WHERE created_by=? AND status=?' if session['role']=='sales' else ' WHERE status=?'),((session['user_id'],s) if session['role']=='sales' else (s,))).fetchone()['count'] for s in STATUSES}
-    return render_template('dashboard.html',requests=rows,counts=counts,q=q,selected_status=status)
+    return render_template('dashboard.html',requests=rows,counts=counts,q=q,selected_status=status,sort=sort)
 
 
 @app.route('/admin/users', methods=['GET','POST'])
