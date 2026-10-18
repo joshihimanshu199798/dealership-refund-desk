@@ -609,6 +609,63 @@ def audit_trail():
                            start_date=start_date,end_date=end_date,total_events=total)
 
 
+
+@app.route('/reconciliation')
+@roles_required('cashier','accounts','admin')
+def payment_reconciliation():
+    """Review recorded payments for missing references, duplicates, and amount variance."""
+    q=request.args.get('q','').strip()[:120]
+    issue_filter=request.args.get('issue','all').strip().lower()
+    if issue_filter not in ('all','matched','variance','duplicate','incomplete'):
+        issue_filter='all'
+    sql="""SELECT r.*,u.name AS requester FROM requests r
+           JOIN users u ON u.id=r.created_by
+           WHERE (r.status IN ('Payment Processed','Closed') OR r.payment_date IS NOT NULL
+                  OR r.utr IS NOT NULL OR r.processed_amount IS NOT NULL)"""
+    args=[]
+    if q:
+        sql+=" AND (r.request_no LIKE ? OR r.customer_name LIKE ? OR r.customer_code LIKE ? OR r.request_location LIKE ? OR r.utr LIKE ?)"
+        args += [f'%{q}%']*5
+    sql+=" ORDER BY COALESCE(r.payment_date,r.updated_at) DESC,r.id DESC"
+    with db() as con:
+        records=con.execute(sql,args).fetchall()
+    utr_counts={}
+    for row in records:
+        reference=(row['utr'] or '').strip().casefold()
+        if reference:
+            utr_counts[reference]=utr_counts.get(reference,0)+1
+    payments=[]
+    for row in records:
+        requested=float(row['requested_amount'] or 0)
+        processed=float(row['processed_amount'] or 0)
+        reference=(row['utr'] or '').strip()
+        issues=[]
+        if row['status'] in ('Payment Processed','Closed'):
+            if not reference or not row['payment_date'] or row['processed_amount'] is None or processed<=0:
+                issues.append('incomplete')
+        if reference and utr_counts.get(reference.casefold(),0)>1:
+            issues.append('duplicate')
+        if row['processed_amount'] is not None and abs(processed-requested)>0.009:
+            issues.append('variance')
+        if not issues and row['status'] in ('Payment Processed','Closed') and reference and row['payment_date'] and row['processed_amount'] is not None and processed>0:
+            issues.append('matched')
+        item=dict(row)
+        item.update(requested_value=requested,processed_value=processed,
+                    variance=round(processed-requested,2),issues=issues,
+                    issue_label='Duplicate UTR' if 'duplicate' in issues else ('Missing payment data' if 'incomplete' in issues else ('Amount variance' if 'variance' in issues else ('Recorded payment' if 'matched' in issues else 'Needs review'))))
+        if issue_filter=='all' or issue_filter in issues:
+            payments.append(item)
+    summary={
+        'records':len(records),
+        'matched':sum(1 for x in records if x['status'] in ('Payment Processed','Closed') and (x['utr'] or '').strip() and x['payment_date'] and x['processed_amount'] is not None and float(x['processed_amount'] or 0)>0 and abs(float(x['processed_amount'] or 0)-float(x['requested_amount'] or 0))<=0.009 and utr_counts.get((x['utr'] or '').strip().casefold(),0)==1),
+        'variance':sum(1 for x in payments if 'variance' in x['issues']),
+        'duplicate':sum(1 for x in payments if 'duplicate' in x['issues']),
+        'incomplete':sum(1 for x in payments if 'incomplete' in x['issues']),
+        'processed_total':sum(float(x['processed_amount'] or 0) for x in records if x['status'] in ('Payment Processed','Closed')),
+    }
+    return render_template('reconciliation.html',payments=payments,q=q,issue_filter=issue_filter,summary=summary)
+
+
 @app.route('/admin/users', methods=['GET','POST'])
 @roles_required('admin')
 def admin_users():
