@@ -35,3 +35,39 @@
   .panel .filters > select,
   .panel .filters > .btn{grid-column:1; width:100%; min-width:0}
 }
+
+
+/* Keep the document upload controls fully visible in the detail panel */
+.detail-grid > .main-column,
+.detail-grid > .side-column{min-width:0}
+.main-column .panel{min-width:0}
+.main-column .upload-row{
+  display:grid;
+  grid-template-columns:minmax(0,1.15fr) minmax(180px,1fr) auto;
+  align-items:center;
+  gap:10px;
+  width:100%;
+  min-width:0;
+}
+.main-column .upload-row input[type="file"]{
+  display:block;
+  width:100%;
+  min-width:0;
+  max-width:100%;
+  padding:8px;
+  font-size:12px;
+}
+.main-column .upload-row select{width:100%;min-width:0}
+.main-column .upload-row button{justify-self:end}
+@media(max-width:1100px){
+  .main-column .upload-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .main-column .upload-row input[type="file"]{grid-column:1 / -1}
+  .main-column .upload-row button{justify-self:start}
+}
+@media(max-width:560px){
+  .main-column .upload-row{grid-template-columns:minmax(0,1fr)}
+  .main-column .upload-row input[type="file"],
+  .main-column .upload-row select,
+  .main-column .upload-row button{grid-column:1;width:100%;min-width:0}
+  .main-column .upload-row button{justify-self:stretch}
+}
