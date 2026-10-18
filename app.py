@@ -1085,5 +1085,81 @@ def download_attachment(aid):
 @app.errorhandler(413)
 def too_large(_): return 'File too large. Maximum upload size is 10 MB per request.',413
 
+
+def build_refund_risk(row, attachment_count, duplicate_customer=False, duplicate_utr=False):
+    """Explainable rules-based triage; a warning is not a fraud finding or approval decision."""
+    flags=[]
+    amount=float(row['requested_amount'] or 0)
+    high_value=float(os.getenv('REFUND_HIGH_VALUE_THRESHOLD','100000'))
+    if duplicate_customer: flags.append(('Possible repeat customer/refund','Another request has the same customer code or customer name and amount.',25))
+    if duplicate_utr: flags.append(('Reused UTR/reference','The payment reference appears on another refund request.',40))
+    if amount >= high_value: flags.append(('High-value refund',f'Request is at or above the configured ₹{format_inr(high_value,0)} threshold.',20))
+    if not attachment_count: flags.append(('Supporting document missing','No attachment is recorded for this request.',15))
+    if amount <= 0: flags.append(('Invalid amount','Requested amount is not positive.',35))
+    score=min(100,sum(x[2] for x in flags))
+    level='High' if score>=50 else ('Medium' if score>=25 else 'Low')
+    return {'score':score,'level':level,'flags':flags}
+
+def calculate_risk_for_rows(rows, con):
+    results=[]
+    for row in rows:
+        attachments=con.execute('SELECT COUNT(*) AS count FROM attachments WHERE request_id=?',(row['id'],)).fetchone()['count']
+        customer_code=(row['customer_code'] or '').strip().lower()
+        customer_name=(row['customer_name'] or '').strip().lower()
+        amount=round(float(row['requested_amount'] or 0),2)
+        duplicate_customer=False
+        for other in rows:
+            if other['id']==row['id'] or round(float(other['requested_amount'] or 0),2)!=amount: continue
+            other_code=(other['customer_code'] or '').strip().lower()
+            other_name=(other['customer_name'] or '').strip().lower()
+            if (customer_code and customer_code==other_code) or (customer_name and customer_name==other_name):
+                duplicate_customer=True; break
+        utr=(row['utr'] or '').strip().lower()
+        duplicate_utr=bool(utr and any(other['id']!=row['id'] and (other['utr'] or '').strip().lower()==utr for other in rows))
+        risk=build_refund_risk(row,attachments,duplicate_customer,duplicate_utr)
+        results.append({'request':row,'risk':risk})
+    return sorted(results,key=lambda item:(-item['risk']['score'],item['request']['created_at']))
+
+@app.route('/risk')
+@roles_required('accounts','admin','ceo')
+def refund_risk_centre():
+    with db() as con:
+        rows=con.execute('SELECT r.*,u.name AS requester FROM requests r JOIN users u ON u.id=r.created_by ORDER BY r.created_at DESC').fetchall()
+        assessed=calculate_risk_for_rows(rows,con)
+    return render_template('risk.html',items=assessed,high=sum(1 for x in assessed if x['risk']['level']=='High'),medium=sum(1 for x in assessed if x['risk']['level']=='Medium'))
+
+@app.route('/notifications')
+@login_required
+def actionable_notifications():
+    with db() as con:
+        rows=con.execute('SELECT r.*,u.name AS requester FROM requests r JOIN users u ON u.id=r.created_by ORDER BY r.created_at DESC').fetchall()
+        if session['role']=='sales':
+            rows=[r for r in rows if r['created_by']==session['user_id']]
+        elif session['role']=='ceo':
+            rows=[r for r in rows if r['status'] not in ('Closed','Rejected','Payment Processed')]
+        elif session['role'] in ('accounts','cashier'):
+            rows=[r for r in rows if r['ceo_approved'] and r['status'] not in ('Closed','Rejected','Payment Processed')]
+        sla_days=max(1,int(os.getenv('REFUND_SLA_DAYS','3')))
+        high_value=float(os.getenv('REFUND_HIGH_VALUE_THRESHOLD','100000'))
+        alerts=[]
+        for r in rows:
+            rid=r['id']; age=request_age_days(r); url=url_for('request_detail',rid=rid)
+            attachment_count=con.execute('SELECT COUNT(*) AS count FROM attachments WHERE request_id=?',(rid,)).fetchone()['count']
+            if r['status']=='Pending CEO Approval' and session['role'] in ('ceo','admin'):
+                alerts.append({'kind':'CEO approval pending','detail':f"{r['request_no']} · {r['customer_name']} · ₹{format_inr(r['requested_amount'],0)}",'url':url,'action':'Review request','priority':1})
+            if is_open_status(r['status']) and age>=sla_days:
+                alerts.append({'kind':'SLA overdue','detail':f"{r['request_no']} has been open for {age} days.",'url':url,'action':'Open overdue case','priority':0})
+            if not attachment_count and r['status'] not in ('Rejected','Closed','Payment Processed'):
+                alerts.append({'kind':'Supporting document missing','detail':f"{r['request_no']} needs supporting evidence.",'url':url,'action':'Upload or request documents','priority':1})
+            if r['status']=='Documents Required':
+                alerts.append({'kind':'Documents requested','detail':f"{r['request_no']} is waiting for additional documents.",'url':url,'action':'Follow up','priority':0})
+            if float(r['requested_amount'] or 0)>=high_value and r['status'] not in ('Rejected','Closed','Payment Processed'):
+                alerts.append({'kind':'High-value refund review','detail':f"{r['request_no']} · ₹{format_inr(r['requested_amount'],0)}",'url':url,'action':'Review risk flags','priority':1})
+            if r['status']=='Payment Processed' and (not r['utr'] or not r['payment_date'] or not r['processed_amount']):
+                alerts.append({'kind':'Reconciliation exception','detail':f"{r['request_no']} is marked processed but payment evidence is incomplete.",'url':url,'action':'Check payment record','priority':0})
+    alerts.sort(key=lambda x:(x['priority'],x['kind']))
+    return render_template('notifications.html',alerts=alerts)
+
+
 init_db()
 if __name__=='__main__': app.run(host='0.0.0.0',port=int(os.getenv('PORT','5000')),debug=os.getenv('FLASK_DEBUG')=='1')
