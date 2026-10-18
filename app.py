@@ -111,6 +111,15 @@ def init_db():
         if os.getenv('DEMO_MODE', 'false').lower() in ('1','true','yes') and user_count == 0:
             demos=[('Demo Sales Executive','sales@example.com','SalesDemo123!','sales'),('Demo Accounts User','accounts@example.com','AccountsDemo123!','accounts'),('Demo Administrator','admin@example.com','AdminDemo123!','admin')]
             con.executemany('INSERT INTO users(name,email,password_hash,role) VALUES(?,?,?,?)',[(n,e,generate_password_hash(p),r) for n,e,p,r in demos])
+        # One-time administrator bootstrap for hosted environments without shell access.
+        # Set both variables temporarily, deploy once, then remove both variables.
+        admin_email = os.getenv('BOOTSTRAP_ADMIN_EMAIL', '').strip().lower()
+        admin_password = os.getenv('BOOTSTRAP_ADMIN_PASSWORD', '')
+        if admin_email and admin_password and len(admin_password) >= 12:
+            exists = con.execute('SELECT id FROM users WHERE lower(email)=?', (admin_email,)).fetchone()
+            if not exists:
+                con.execute('INSERT INTO users(name,email,password_hash,role) VALUES(?,?,?,?)',
+                            ('Refund Desk Administrator', admin_email, generate_password_hash(admin_password), 'admin'))
 
 def email_configured(): return bool(os.getenv('SMTP_HOST') and os.getenv('SMTP_FROM'))
 
@@ -196,7 +205,7 @@ def add_attachments(con,rid,saved):
         con.execute('INSERT INTO attachments(request_id,uploaded_by,created_at,original_name,stored_name,category) VALUES(?,?,?,?,?,?)',(rid,session['user_id'],now(),original,stored,category))
 
 @app.context_processor
-def globals_for_templates(): return {'STATUSES':STATUSES}
+def globals_for_templates(): return {'STATUSES':STATUSES, 'demo_mode': os.getenv('DEMO_MODE', 'false').lower() in ('1','true','yes')}
 
 @app.cli.command('create-user')
 def create_user_command():
