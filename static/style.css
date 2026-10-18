@@ -282,3 +282,7 @@ button:disabled,.btn:disabled{opacity:.55;cursor:not-allowed}
 .analytics-track span{display:block;height:100%;min-width:0;border-radius:99px;background:linear-gradient(90deg,#3ac9a1,#3976b8)}
 @media(max-width:900px){.analytics-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.analytics-columns{grid-template-columns:minmax(0,1fr)}.analytics-wide{grid-column:auto}}
 @media(max-width:560px){.control-centre-head{flex-direction:column}.control-centre-head .btn{width:100%}.alert-item{gap:8px;padding:10px}.alert-symbol{width:30px;height:30px}.alert-copy small{font-size:10px}.alert-value{font-size:10px}.alert-arrow{display:none}.analytics-grid{gap:8px}.analytics-kpi{padding:12px}.analytics-kpi strong{font-size:20px}.analytics-kpi span,.analytics-kpi small{font-size:10px}.analytics-bar-label{font-size:10px}.analytics-bar-label span{max-width:55%}}
+
+
+/* Audit trail readability */
+.audit-detail-cell{min-width:260px;max-width:480px;white-space:normal;overflow-wrap:anywhere;line-height:1.5}.audit-detail-cell{color:var(--text-secondary,#526071)}
