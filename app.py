@@ -126,7 +126,6 @@ def init_db():
                 con.execute('ALTER TABLE requests ADD COLUMN account_no TEXT')
             if 'ifsc_code' not in columns:
                 con.execute('ALTER TABLE requests ADD COLUMN ifsc_code TEXT')
-    else:
         raw = sqlite3.connect(DB_PATH)
         try:
             raw.execute('PRAGMA foreign_keys=OFF')
