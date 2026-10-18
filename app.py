@@ -454,12 +454,29 @@ def ceo_bulk_approve():
     return redirect(url_for('dashboard',status='Pending CEO Approval'))
 
 
+def csv_safe(value):
+    """Prevent spreadsheet formula execution from untrusted exported text."""
+    if value is None:
+        return ''
+    text_value=str(value)
+    if text_value.lstrip().startswith(('=', '+', '-', '@')):
+        return "'" + text_value
+    return text_value
+
 @app.route('/reports/refunds.csv')
 @roles_required('cashier','accounts','admin')
 def export_refunds_csv():
     """Export the current filtered refund queue for authorized finance staff."""
     q=request.args.get('q','').strip()
     status=request.args.get('status','').strip()
+    start_date=request.args.get('start_date','').strip()
+    end_date=request.args.get('end_date','').strip()
+    for date_value in (start_date,end_date):
+        if date_value and (len(date_value)!=10 or parse_dt(date_value) is None or parse_dt(date_value).date().isoformat()!=date_value):
+            start_date=end_date=''
+            break
+    if start_date and end_date and start_date>end_date:
+        start_date=end_date=''
     sort=request.args.get('sort','newest').strip().lower()
     if sort not in ('newest','oldest'): sort='newest'
     sql='SELECT r.*,u.name AS requester FROM requests r JOIN users u ON u.id=r.created_by WHERE 1=1'
@@ -471,6 +488,10 @@ def export_refunds_csv():
         args += [f'%{q}%']*10
     if status and status in STATUSES:
         sql+=' AND r.status=?'; args.append(status)
+    if start_date:
+        sql+=' AND substr(r.created_at,1,10)>=?'; args.append(start_date)
+    if end_date:
+        sql+=' AND substr(r.created_at,1,10)<=?'; args.append(end_date)
     sql += " ORDER BY r.created_at " + ("ASC" if sort=='oldest' else "DESC") + ", r.id " + ("ASC" if sort=='oldest' else "DESC")
     sla_days=max(1,int(os.getenv('REFUND_SLA_DAYS','3')))
     output=StringIO(newline='')
@@ -482,7 +503,7 @@ def export_refunds_csv():
         age=request_age_days(row)
         overdue=is_open_status(row['status']) and age>=sla_days
         if request.args.get('overdue')=='1' and not overdue: continue
-        writer.writerow([row['request_no'],row['created_at'],row['updated_at'],row['customer_name'],row['customer_code'] or '',row['request_location'] or '',row['refund_type'],f"{row['requested_amount']:.2f}",row['status'],row['priority'],row['assigned_to'] or '',age,'Yes' if overdue else 'No',row['payment_date'] or '',row['utr'] or '',f"{row['processed_amount']:.2f}" if row['processed_amount'] is not None else '',row['requester']])
+        writer.writerow([csv_safe(row['request_no']),csv_safe(row['created_at']),csv_safe(row['updated_at']),csv_safe(row['customer_name']),csv_safe(row['customer_code'] or ''),csv_safe(row['request_location'] or ''),csv_safe(row['refund_type']),f"{row['requested_amount']:.2f}",csv_safe(row['status']),csv_safe(row['priority']),csv_safe(row['assigned_to'] or ''),age,'Yes' if overdue else 'No',csv_safe(row['payment_date'] or ''),csv_safe(row['utr'] or ''),f"{row['processed_amount']:.2f}" if row['processed_amount'] is not None else '',csv_safe(row['requester'])])
     response=Response('\ufeff'+output.getvalue(),mimetype='text/csv; charset=utf-8')
     response.headers['Content-Disposition']='attachment; filename=refund-queue.csv'
     response.headers['Cache-Control']='no-store'
