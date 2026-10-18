@@ -257,3 +257,26 @@ class AppSmokeTests(unittest.TestCase):
         self.assertEqual(self.client.get('/reconciliation').status_code,403)
 
 if __name__=='__main__': unittest.main()
+
+    def test_risk_centre_flags_high_value_missing_docs_and_restricts_sales(self):
+        self.login('sales@example.com','SalesDemo123!')
+        self.client.post('/requests/new',data={'customer_name':'Risk Customer','request_location':'Delhi','refund_type':'Booking amount refund','requested_amount':'150000','reason':'Risk test'},follow_redirects=True)
+        self.client.get('/logout')
+        self.login('accounts@example.com','AccountsDemo123!')
+        response=self.client.get('/risk')
+        self.assertEqual(response.status_code,200)
+        self.assertIn(b'High-value refund',response.data)
+        self.assertIn(b'Supporting document missing',response.data)
+        self.client.get('/logout')
+        self.login('sales@example.com','SalesDemo123!')
+        self.assertEqual(self.client.get('/risk').status_code,403)
+
+    def test_actionable_notifications_include_pending_ceo_and_missing_documents(self):
+        self.login('sales@example.com','SalesDemo123!')
+        self.client.post('/requests/new',data={'customer_name':'Alert Customer','request_location':'Delhi','refund_type':'Booking amount refund','requested_amount':'5000','reason':'Alert test'},follow_redirects=True)
+        self.client.get('/logout')
+        self.login('ceo@example.com','CEOdemo123!!')
+        response=self.client.get('/notifications')
+        self.assertEqual(response.status_code,200)
+        self.assertIn(b'CEO approval pending',response.data)
+        self.assertIn(b'Supporting document missing',response.data)
