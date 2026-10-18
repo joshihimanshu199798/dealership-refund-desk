@@ -209,8 +209,11 @@ def create_user_command():
         with db() as con:
             con.execute('INSERT INTO users(name,email,password_hash,role) VALUES(?,?,?,?)',
                         (name,email,generate_password_hash(password),role))
-    except sqlite3.IntegrityError:
-        raise click.ClickException('That email already exists.')
+    except Exception as exc:
+        # psycopg raises UniqueViolation for PostgreSQL; sqlite raises IntegrityError.
+        if isinstance(exc, sqlite3.IntegrityError) or exc.__class__.__name__ in ('UniqueViolation', 'IntegrityError'):
+            raise click.ClickException('That email already exists.')
+        raise
     click.echo(f'Created {role} user: {email}')
 
 @app.route('/healthz')
