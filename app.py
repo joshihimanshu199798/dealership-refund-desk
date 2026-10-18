@@ -47,7 +47,7 @@ app.config.update(
     SESSION_COOKIE_SECURE=os.getenv('COOKIE_SECURE', 'false').lower() in ('1','true','yes'),
     PERMANENT_SESSION_LIFETIME=__import__('datetime').timedelta(hours=8),
 )
-STATUSES = ['Submitted','Under Review','Documents Required','Approved for Payment','Payment Processed','Closed','Rejected']
+STATUSES = ['Pending CEO Approval','CEO Approved','Submitted','Under Review','Documents Required','Approved for Payment','Payment Processed','Closed','Rejected']
 
 class PostgresConnection:
     """Small DB-API compatibility layer for the existing parameterized SQL."""
@@ -82,7 +82,7 @@ def init_db():
     postgres = bool(os.getenv('DATABASE_URL', '').strip())
     if postgres:
         schema = """
-        CREATE TABLE IF NOT EXISTS users(id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('sales','cashier','accounts','admin')));
+        CREATE TABLE IF NOT EXISTS users(id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('sales','cashier','accounts','admin','ceo')));
         CREATE TABLE IF NOT EXISTS requests(id BIGSERIAL PRIMARY KEY, request_no TEXT UNIQUE NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, created_by BIGINT NOT NULL REFERENCES users(id), assigned_to TEXT, customer_name TEXT NOT NULL, customer_code TEXT, request_location TEXT, customer_phone TEXT, customer_email TEXT, booking_no TEXT, vehicle_model TEXT, vin TEXT, refund_type TEXT NOT NULL, requested_amount DOUBLE PRECISION NOT NULL, reason TEXT NOT NULL, bank_name TEXT, account_no TEXT, ifsc_code TEXT, account_last4 TEXT, status TEXT NOT NULL, priority TEXT NOT NULL DEFAULT 'Normal', payment_date TEXT, utr TEXT, processed_amount DOUBLE PRECISION, closure_note TEXT);
         CREATE TABLE IF NOT EXISTS comments(id BIGSERIAL PRIMARY KEY, request_id BIGINT NOT NULL REFERENCES requests(id) ON DELETE CASCADE, user_id BIGINT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL, visibility TEXT NOT NULL DEFAULT 'Internal', body TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS attachments(id BIGSERIAL PRIMARY KEY, request_id BIGINT NOT NULL REFERENCES requests(id) ON DELETE CASCADE, uploaded_by BIGINT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL, original_name TEXT NOT NULL, stored_name TEXT NOT NULL, category TEXT NOT NULL);
@@ -101,7 +101,12 @@ def init_db():
             con.execute('ALTER TABLE requests ADD COLUMN IF NOT EXISTS account_no TEXT')
             con.execute('ALTER TABLE requests ADD COLUMN IF NOT EXISTS ifsc_code TEXT')
             con.execute('ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check')
-            con.execute("ALTER TABLE users ADD CONSTRAINT users_role_check CHECK(role IN ('sales','cashier','accounts','admin'))")
+            con.execute("ALTER TABLE users ADD CONSTRAINT users_role_check CHECK(role IN ('sales','cashier','accounts','admin','ceo'))")
+            con.execute('ALTER TABLE requests ADD COLUMN IF NOT EXISTS ceo_approved INTEGER NOT NULL DEFAULT 0')
+            con.execute('ALTER TABLE requests ADD COLUMN IF NOT EXISTS ceo_decision TEXT')
+            con.execute('ALTER TABLE requests ADD COLUMN IF NOT EXISTS ceo_approved_by BIGINT REFERENCES users(id)')
+            con.execute('ALTER TABLE requests ADD COLUMN IF NOT EXISTS ceo_approved_at TEXT')
+            con.execute('ALTER TABLE requests ADD COLUMN IF NOT EXISTS ceo_comments TEXT')
     else:
         with db() as con:
             con.executescript("""
@@ -121,6 +126,24 @@ def init_db():
                 con.execute('ALTER TABLE requests ADD COLUMN account_no TEXT')
             if 'ifsc_code' not in columns:
                 con.execute('ALTER TABLE requests ADD COLUMN ifsc_code TEXT')
+    else:
+        raw = sqlite3.connect(DB_PATH)
+        try:
+            raw.execute('PRAGMA foreign_keys=OFF')
+            schema_row = raw.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").fetchone()
+            if schema_row and "'ceo'" not in (schema_row[0] or ''):
+                raw.execute("CREATE TABLE users_new(id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('sales','cashier','accounts','admin','ceo')))")
+                raw.execute('INSERT INTO users_new(id,name,email,password_hash,role) SELECT id,name,email,password_hash,role FROM users')
+                raw.execute('DROP TABLE users')
+                raw.execute('ALTER TABLE users_new RENAME TO users')
+            cols=[row[1] for row in raw.execute('PRAGMA table_info(requests)').fetchall()]
+            for name, definition in [('ceo_approved','INTEGER NOT NULL DEFAULT 0'),('ceo_decision','TEXT'),('ceo_approved_by','INTEGER'),('ceo_approved_at','TEXT'),('ceo_comments','TEXT')]:
+                if name not in cols:
+                    raw.execute(f'ALTER TABLE requests ADD COLUMN {name} {definition}')
+            raw.commit()
+        finally:
+            raw.execute('PRAGMA foreign_keys=ON')
+            raw.close()
     with db() as con:
         user_count = con.execute('SELECT COUNT(*) AS count FROM users').fetchone()['count']
         if os.getenv('DEMO_MODE', 'false').lower() in ('1','true','yes') and user_count == 0:
@@ -260,7 +283,7 @@ def create_user_command():
     import click
     name=click.prompt('Full name')
     email=click.prompt('Email').strip().lower()
-    role=click.prompt('Role',type=click.Choice(['sales','accounts','admin'],case_sensitive=False)).lower()
+    role=click.prompt('Role',type=click.Choice(['sales','accounts','admin','ceo'],case_sensitive=False)).lower()
     password=click.prompt('Password',hide_input=True,confirmation_prompt=True)
     if len(password)<12:
         raise click.ClickException('Password must be at least 12 characters.')
@@ -294,7 +317,7 @@ def login():
     if request.method=='POST':
         email=request.form.get('email','').strip().lower(); password=request.form.get('password','')
         login_role=request.form.get('login_role','')
-        allowed_login_roles={'sales': {'sales'}, 'accounts': {'accounts','cashier'}, 'admin': {'admin'}}
+        allowed_login_roles={'sales': {'sales'}, 'accounts': {'accounts','cashier'}, 'admin': {'admin'}, 'ceo': {'ceo'}}
         with db() as con: user=con.execute('SELECT * FROM users WHERE lower(email)=?',(email,)).fetchone()
         if user and check_password_hash(user['password_hash'],password) and user['role'] in allowed_login_roles.get(login_role,set()):
             effective_role = 'accounts' if user['role'] == 'cashier' else user['role']
@@ -319,6 +342,10 @@ def dashboard():
     if session['role']=='sales':
         sql+=' AND r.created_by=?'
         args.append(session['user_id'])
+    elif session['role']=='ceo':
+        sql+=" AND COALESCE(r.ceo_approved,0)=0 AND r.status NOT IN ('Rejected','Closed')"
+    elif session['role']=='accounts':
+        sql+=' AND COALESCE(r.ceo_approved,0)=1'
     if q:
         sql+=' AND (r.request_no LIKE ? OR r.customer_name LIKE ? OR r.customer_code LIKE ? OR r.request_location LIKE ? OR r.utr LIKE ?)'
         args += [f'%{q}%']*5
@@ -436,10 +463,10 @@ def new_request():
                 return render_template('new_request.html',duplicate_matches=matches,form_data=request.form)
             created=now()
             with db() as con:
-                cur=con.execute('''INSERT INTO requests(request_no,created_at,updated_at,created_by,customer_name,customer_code,request_location,refund_type,requested_amount,reason,bank_name,account_no,ifsc_code,status,priority) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id''',('RF-'+datetime.now().strftime('%y%m')+'-'+uuid.uuid4().hex[:6].upper(),created,created,session['user_id'],request.form['customer_name'].strip(),request.form.get('customer_code','').strip(),request.form.get('request_location','').strip(),request.form['refund_type'],amount,request.form['reason'].strip(),request.form.get('bank_name','').strip(),request.form.get('account_no','').strip(),request.form.get('ifsc_code','').strip().upper() or None,'Submitted',request.form.get('priority','Normal')))
+                cur=con.execute('''INSERT INTO requests(request_no,created_at,updated_at,created_by,customer_name,customer_code,request_location,refund_type,requested_amount,reason,bank_name,account_no,ifsc_code,status,priority,ceo_approved) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id''',('RF-'+datetime.now().strftime('%y%m')+'-'+uuid.uuid4().hex[:6].upper(),created,created,session['user_id'],request.form['customer_name'].strip(),request.form.get('customer_code','').strip(),request.form.get('request_location','').strip(),request.form['refund_type'],amount,request.form['reason'].strip(),request.form.get('bank_name','').strip(),request.form.get('account_no','').strip(),request.form.get('ifsc_code','').strip().upper() or None,'Pending CEO Approval',request.form.get('priority','Normal'),0))
                 rid=cur.fetchone()['id']; add_attachments(con,rid,save_uploads(request.files.getlist('attachments'),rid,'Initial supporting document')); log_action(con,rid,'Request submitted','Refund request created by sales.')
             with db() as con: row=con.execute('SELECT r.*,u.name AS requester FROM requests r JOIN users u ON u.id=r.created_by WHERE r.id=?',(rid,)).fetchone()
-            send_notification(accounts_recipients(),f"New refund request {row['request_no']}",f"A new refund request was submitted by {row['requester']}.\n\n{request_summary(row)}\nOpen the Refund Desk to review documents and update the request.",rid)
+            send_notification(ceo_recipients(),f"CEO approval required: {row['request_no']}",f"A refund request is waiting for CEO approval.\n\n{request_summary(row)}\nOpen the Refund Desk to review and decide.",rid)
             if matches:
                 flash('Request submitted after duplicate review. Please verify the possible match in the request queue.','error')
             else:
