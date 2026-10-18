@@ -365,6 +365,7 @@ def dashboard():
         scope_sql+=' AND r.created_by=?'; scope_args.append(session['user_id'])
     elif role=='accounts':
         # Separate approved and awaiting-CEO queues are exposed through the dashboard filter.
+        pass
     with db() as con:
         rows=con.execute(sql,args).fetchall()
         all_rows=con.execute(scope_sql,scope_args).fetchall()
