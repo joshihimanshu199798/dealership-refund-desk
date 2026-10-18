@@ -671,6 +671,7 @@ def upload_more(rid):
         r=con.execute('SELECT * FROM requests WHERE id=?',(rid,)).fetchone()
         if not r: abort(404)
         if session['role']=='sales' and r['created_by']!=session['user_id']: abort(403)
+        if session['role']=='ceo': abort(403)
         try:
             saved=save_uploads(request.files.getlist('attachments'),rid,request.form.get('category','Additional document')); add_attachments(con,rid,saved)
             if saved: log_action(con,rid,'Attachment uploaded',f'{len(saved)} file(s) added.')
