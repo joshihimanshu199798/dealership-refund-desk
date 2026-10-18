@@ -200,6 +200,36 @@ class AppSmokeTests(unittest.TestCase):
         self.assertIn(b'Variance Customer',variance.data)
         self.assertNotIn(b'Duplicate Reference Customer',variance.data)
 
+    def test_bank_statement_csv_matches_reference_and_flags_variance(self):
+        self.login('sales@example.com','SalesDemo123!')
+        self.client.post('/requests/new',data={'customer_name':'Bank Match Customer','request_location':'Delhi Test Branch','refund_type':'Booking amount refund','requested_amount':'1200','reason':'Bank CSV test'},follow_redirects=True)
+        with self.app_module.db() as con: rid=con.execute('SELECT id FROM requests').fetchone()['id']
+        self.approve_as_ceo(rid)
+        self.client.get('/logout')
+        self.login('accounts@example.com','AccountsDemo123!')
+        self.client.post(f'/requests/{rid}/update',data={'status':'Payment Processed','processed_amount':'1200','payment_date':'2026-10-19','utr':'BANK-REF-123'},follow_redirects=True)
+        import io
+        csv_data='Date,UTR,Amount,Description\\n2026-10-19,BANK-REF-123,1200,Refund payout\\n2026-10-19,UNKNOWN-REF,500,Unknown payout\\n2026-10-19,BANK-REF-123,1200,Duplicate payout\\n'
+        response=self.client.post('/reconciliation/bank-statement',data={'statement':(io.BytesIO(csv_data.encode()),'bank.csv')},content_type='multipart/form-data')
+        self.assertEqual(response.status_code,200)
+        self.assertIn(b'Reference + amount matched',response.data)
+        self.assertIn(b'Unmatched',response.data)
+        self.assertIn(b'Duplicate reference',response.data)
+        with self.app_module.db() as con:
+            row=con.execute('SELECT status,utr FROM requests WHERE id=?',(rid,)).fetchone()
+            self.assertEqual(row['status'],'Payment Processed')
+            self.assertEqual(row['utr'],'BANK-REF-123')
+
+    def test_bank_statement_upload_validates_format_and_access(self):
+        self.login('accounts@example.com','AccountsDemo123!')
+        import io
+        bad=self.client.post('/reconciliation/bank-statement',data={'statement':(io.BytesIO(b'Wrong,Columns\\nabc,123\\n'),'bank.csv')},content_type='multipart/form-data')
+        self.assertEqual(bad.status_code,200)
+        self.assertIn(b'UTR/reference column and an Amount column',bad.data)
+        self.client.get('/logout')
+        self.login('sales@example.com','SalesDemo123!')
+        self.assertEqual(self.client.get('/reconciliation/bank-statement').status_code,403)
+
     def test_sales_cannot_open_payment_reconciliation(self):
         self.login('sales@example.com','SalesDemo123!')
         self.assertEqual(self.client.get('/reconciliation').status_code,403)
