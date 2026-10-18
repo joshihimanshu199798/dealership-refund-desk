@@ -19,6 +19,11 @@ class AppSmokeTests(unittest.TestCase):
         self.client=app_module.app.test_client()
     def tearDown(self): self.tmp.cleanup()
     def login(self,email,password): return self.client.post('/login',data={'email':email,'password':password},follow_redirects=True)
+    def test_health_check_confirms_database_is_reachable(self):
+        r=self.client.get('/healthz')
+        self.assertEqual(r.status_code,200)
+        self.assertEqual(r.get_json(),{'status':'ok','database':'ok'})
+
     def test_sales_login_and_dashboard(self):
         r=self.login('sales@example.com','SalesDemo123!')
         self.assertEqual(r.status_code,200)
