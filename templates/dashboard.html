@@ -47,6 +47,7 @@
 {% endif %}
 <section class="panel">
   {% if session.role in ['accounts','admin'] %}<a class="btn btn-secondary" href="{{ url_for('export_refunds_csv',q=q,status=selected_status,sort=sort,overdue=1 if overdue_only else 0,start_date=start_date,end_date=end_date) }}">Export CSV</a>{% endif %}
+  <div class="queue-summary" role="status" aria-live="polite"><strong>{{ visible_count }} request{{ "" if visible_count == 1 else "s" }} shown</strong><span>Filtered requested value: <strong>₹{{ '{:,.2f}'.format(visible_value) }}</strong></span>{% if start_date or end_date %}<span>Date range: {{ start_date or "Any date" }} – {{ end_date or "Any date" }}</span>{% endif %}</div>
   <form class="filters" method="get">
     <input name="q" value="{{ q }}" placeholder="Search request, customer code, location or UTR…">\n    <label class="sort-control">From date<input type="date" name="start_date" value="{{ start_date }}"></label>\n    <label class="sort-control">To date<input type="date" name="end_date" value="{{ end_date }}"></label>
     {% if overdue_only %}<input type="hidden" name="overdue" value="1">{% endif %}
