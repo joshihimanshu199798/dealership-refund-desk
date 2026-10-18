@@ -147,7 +147,7 @@ def init_db():
     with db() as con:
         user_count = con.execute('SELECT COUNT(*) AS count FROM users').fetchone()['count']
         if os.getenv('DEMO_MODE', 'false').lower() in ('1','true','yes') and user_count == 0:
-            demos=[('Demo Sales Executive','sales@example.com','SalesDemo123!','sales'),('Demo Accounts User','accounts@example.com','AccountsDemo123!','accounts'),('Demo Administrator','admin@example.com','AdminDemo123!','admin')]
+            demos=[('Demo Sales Executive','sales@example.com','SalesDemo123!','sales'),('Demo Accounts User','accounts@example.com','AccountsDemo123!','accounts'),('Demo Administrator','admin@example.com','AdminDemo123!','admin'),('Demo CEO','ceo@example.com','CEOdemo123!!','ceo')]
             con.executemany('INSERT INTO users(name,email,password_hash,role) VALUES(?,?,?,?)',[(n,e,generate_password_hash(p),r) for n,e,p,r in demos])
         # One-time administrator bootstrap for hosted environments without shell access.
         # Set both variables temporarily, deploy once, then remove both variables.
@@ -378,6 +378,8 @@ def export_refunds_csv():
     if sort not in ('newest','oldest'): sort='newest'
     sql='SELECT r.*,u.name AS requester FROM requests r JOIN users u ON u.id=r.created_by WHERE 1=1'
     args=[]
+    if session['role']=='accounts':
+        sql+=' AND COALESCE(r.ceo_approved,0)=1'
     if q:
         sql+=' AND (r.request_no LIKE ? OR r.customer_name LIKE ? OR r.customer_code LIKE ? OR r.request_location LIKE ? OR r.utr LIKE ?)'
         args += [f'%{q}%']*5
@@ -409,7 +411,7 @@ def admin_users():
         email = request.form.get('email', '').strip().lower()
         role = request.form.get('role', '').strip()
         password = request.form.get('password', '')
-        if not name or not email or role not in ('sales', 'accounts', 'admin'):
+        if not name or not email or role not in ('sales', 'accounts', 'admin', 'ceo'):
             flash('Enter a name, valid email, and role.', 'error')
         elif len(password) < 12:
             flash('Password must be at least 12 characters.', 'error')
