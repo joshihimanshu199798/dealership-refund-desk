@@ -76,6 +76,30 @@ def db():
     con.execute('PRAGMA foreign_keys=ON')
     return con
 
+def format_inr(value, decimals=2):
+    """Format numeric values with Indian digit grouping, e.g. ₹12,34,567.89."""
+    try:
+        number = float(value or 0)
+    except (TypeError, ValueError):
+        number = 0.0
+    decimals = max(0, min(4, int(decimals)))
+    rendered = f"{abs(number):.{decimals}f}"
+    whole, dot, fraction = rendered.partition('.')
+    if len(whole) > 3:
+        last_three = whole[-3:]
+        leading = whole[:-3]
+        groups = []
+        while leading:
+            groups.insert(0, leading[-2:])
+            leading = leading[:-2]
+        whole = ','.join(groups + [last_three])
+    sign = '-' if number < 0 else ''
+    return f"{sign}{whole}{dot}{fraction if dot else ''}"
+
+@app.template_filter('inr')
+def inr_filter(value, decimals=2):
+    return format_inr(value, decimals)
+
 def now(): return datetime.now().astimezone().isoformat(timespec='seconds')
 
 def init_db():
@@ -547,6 +571,44 @@ def export_refunds_csv():
     return response
 
 
+
+@app.route('/audit')
+@roles_required('admin','ceo')
+def audit_trail():
+    """Searchable cross-request audit trail for executive and administrator oversight."""
+    q=request.args.get('q','').strip()[:120]
+    action=request.args.get('action','').strip()[:80]
+    start_date=request.args.get('start_date','').strip()
+    end_date=request.args.get('end_date','').strip()
+    for date_value in (start_date,end_date):
+        if date_value and (len(date_value)!=10 or parse_dt(date_value) is None or parse_dt(date_value).date().isoformat()!=date_value):
+            start_date=end_date=''
+            break
+    if start_date and end_date and start_date>end_date:
+        start_date=end_date=''
+    sql="""SELECT a.id,a.request_id,a.created_at,a.action,a.details,u.name AS actor,
+                  r.request_no,r.customer_name,r.request_location
+           FROM audit_log a JOIN users u ON u.id=a.user_id
+           JOIN requests r ON r.id=a.request_id WHERE 1=1"""
+    args=[]
+    if q:
+        sql+=" AND (r.request_no LIKE ? OR r.customer_name LIKE ? OR r.request_location LIKE ? OR u.name LIKE ? OR a.action LIKE ? OR a.details LIKE ?)"
+        args += [f'%{q}%']*6
+    if action:
+        sql+=" AND a.action=?"; args.append(action)
+    if start_date:
+        sql+=" AND substr(a.created_at,1,10)>=?"; args.append(start_date)
+    if end_date:
+        sql+=" AND substr(a.created_at,1,10)<=?"; args.append(end_date)
+    sql+=" ORDER BY a.created_at DESC,a.id DESC LIMIT 300"
+    with db() as con:
+        rows=con.execute(sql,args).fetchall()
+        actions=[row['action'] for row in con.execute('SELECT DISTINCT action FROM audit_log ORDER BY action').fetchall()]
+        total=con.execute('SELECT COUNT(*) AS count FROM audit_log').fetchone()['count']
+    return render_template('audit.html',events=rows,actions=actions,q=q,selected_action=action,
+                           start_date=start_date,end_date=end_date,total_events=total)
+
+
 @app.route('/admin/users', methods=['GET','POST'])
 @roles_required('admin')
 def admin_users():
@@ -758,7 +820,12 @@ def update_request(rid):
         r=con.execute('SELECT * FROM requests WHERE id=?',(rid,)).fetchone()
         if not r: abort(404)
         con.execute('UPDATE requests SET status=?,assigned_to=?,priority=?,utr=?,payment_date=?,processed_amount=?,closure_note=?,updated_at=? WHERE id=?',(status,assigned,priority,utr or None,paydate or None,processed,closure or None,now(),rid))
-        log_action(con,rid,'Request updated',f'Status: {r["status"]} → {status}; priority: {priority}.')
+        changes=[f'Status: {r["status"]} → {status}',f'Priority: {r["priority"]} → {priority}']
+        if (r['assigned_to'] or '') != assigned: changes.append(f'Assigned to: {r["assigned_to"] or "Unassigned"} → {assigned or "Unassigned"}')
+        old_processed=r['processed_amount']
+        if old_processed != processed: changes.append(f'Processed amount: ₹{format_inr(old_processed, 2)} → ₹{format_inr(processed, 2)}')
+        if (r['utr'] or '') != (utr or ''): changes.append(f'UTR/reference changed: {"Yes" if r["utr"] else "No"} → {"Yes" if utr else "No"}')
+        log_action(con,rid,'Request updated','; '.join(changes)+'.')
         if assigned and assigned != (r['assigned_to'] or ''):
             log_action(con,rid,'Request assigned',f'Assigned to {assigned}.')
         updated=con.execute('SELECT r.*,u.name AS requester FROM requests r JOIN users u ON u.id=r.created_by WHERE r.id=?',(rid,)).fetchone()
