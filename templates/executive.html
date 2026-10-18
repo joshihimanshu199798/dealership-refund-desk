@@ -14,12 +14,12 @@
 <div class="analytics-columns">
   <section class="panel"><h2>Critical ageing queue</h2><p class="muted">Open for at least {{ sla_days * 2 }} days. Prioritize these cases first.</p>
     <div class="table-wrap"><table><thead><tr><th>Request</th><th>Customer</th><th>Age</th><th>Requested</th><th>Status</th></tr></thead><tbody>
-    {% for r in critical_cases %}<tr><td><a class="request-link" href="{{ url_for('request_detail',rid=r.id) }}">{{ r.request_no }}</a></td><td>{{ r.customer_name }}<small>{{ r.request_location or 'Location unspecified' }}</small></td><td><span class="age-badge overdue">{{ request_age_days(r) }} days</span></td><td class="money">₹{{ r.requested_amount|inr(2) }}</td><td>{{ r.status }}</td></tr>{% else %}<tr><td colspan="5" class="empty">No critical ageing cases.</td></tr>{% endfor %}
+    {% for r in critical_cases %}<tr><td><a class="request-link" href="{{ url_for('request_detail',rid=r.id) }}">{{ r.request_no }}</a></td><td>{{ r.customer_name }}<small>{{ r.request_location or 'Location unspecified' }}</small></td><td><span class="age-badge overdue">{{ r.age_days }} days</span></td><td class="money">₹{{ r.requested_amount|inr(2) }}</td><td>{{ r.status }}</td></tr>{% else %}<tr><td colspan="5" class="empty">No critical ageing cases.</td></tr>{% endfor %}
     </tbody></table></div>
   </section>
   <section class="panel"><h2>CEO approval queue</h2><p class="muted">Oldest and highest-value requests awaiting a CEO decision.</p>
     <div class="table-wrap"><table><thead><tr><th>Request</th><th>Customer</th><th>Age</th><th>Requested</th></tr></thead><tbody>
-    {% for r in pending %}<tr><td><a class="request-link" href="{{ url_for('request_detail',rid=r.id) }}">{{ r.request_no }}</a></td><td>{{ r.customer_name }}<small>{{ r.request_location or 'Location unspecified' }}</small></td><td>{{ request_age_days(r) }} days</td><td class="money">₹{{ r.requested_amount|inr(2) }}</td></tr>{% else %}<tr><td colspan="4" class="empty">No CEO decisions pending.</td></tr>{% endfor %}
+    {% for r in pending %}<tr><td><a class="request-link" href="{{ url_for('request_detail',rid=r.id) }}">{{ r.request_no }}</a></td><td>{{ r.customer_name }}<small>{{ r.request_location or 'Location unspecified' }}</small></td><td>{{ r.age_days }} days</td><td class="money">₹{{ r.requested_amount|inr(2) }}</td></tr>{% else %}<tr><td colspan="4" class="empty">No CEO decisions pending.</td></tr>{% endfor %}
     </tbody></table></div>
   </section>
   <section class="panel analytics-wide"><h2>Branch exposure and ageing</h2><p class="muted">Open refund requests grouped by sales location.</p>
