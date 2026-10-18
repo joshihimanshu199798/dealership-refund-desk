@@ -343,10 +343,17 @@ def dashboard():
         args.append(session['user_id'])
     # CEO sees every refund, including historical and Accounts-stage requests.
     elif session['role']=='accounts':
-        sql+=" AND (COALESCE(r.ceo_approved,0)=1 OR r.status IN ('Payment Processed','Closed','Rejected'))"
+        # Accounts can see both queues; processing remains gated on CEO approval in detail/update routes.
     if q:
         sql+=' AND (r.request_no LIKE ? OR r.customer_name LIKE ? OR r.customer_code LIKE ? OR r.request_location LIKE ? OR r.utr LIKE ?)'
         args += [f'%{q}%']*5
+    approval_filter=request.args.get('approval','all').strip().lower()
+    if approval_filter not in ('all','approved','pending'): approval_filter='all'
+    if session.get('role')=='accounts':
+        if approval_filter=='approved':
+            sql+=' AND COALESCE(r.ceo_approved,0)=1'
+        elif approval_filter=='pending':
+            sql+=" AND COALESCE(r.ceo_approved,0)=0 AND r.status NOT IN ('Rejected','Closed','Payment Processed')"
     if status and status in STATUSES:
         sql+=' AND r.status=?'
         args.append(status)
@@ -357,7 +364,7 @@ def dashboard():
     if role=='sales':
         scope_sql+=' AND r.created_by=?'; scope_args.append(session['user_id'])
     elif role=='accounts':
-        scope_sql+=" AND (COALESCE(r.ceo_approved,0)=1 OR r.status IN ('Payment Processed','Closed','Rejected'))"
+        # Separate approved and awaiting-CEO queues are exposed through the dashboard filter.
     with db() as con:
         rows=con.execute(sql,args).fetchall()
         all_rows=con.execute(scope_sql,scope_args).fetchall()
@@ -384,7 +391,7 @@ def dashboard():
         'avg_age':round(sum(all_ages)/len(all_ages),1) if all_ages else 0,
         'awaiting_accounts':sum(1 for r in all_rows if r['ceo_approved'] and r['status'] not in ('Payment Processed','Closed','Rejected')),
     }
-    return render_template('dashboard.html',requests=visible,counts=counts,dashboard_stats=dashboard_stats,q=q,selected_status=status,sort=sort,overdue_count=overdue_count,overdue_only=request.args.get('overdue')=='1',sla_days=sla_days)
+    return render_template('dashboard.html',requests=visible,counts=counts,dashboard_stats=dashboard_stats,q=q,selected_status=status,sort=sort,approval_filter=approval_filter,overdue_count=overdue_count,overdue_only=request.args.get('overdue')=='1',sla_days=sla_days)
 
 
 @app.route('/requests/ceo-bulk-approve', methods=['POST'])
@@ -544,6 +551,34 @@ def new_request():
             logging.exception('Refund request submission failed')
             flash('The refund request could not be saved. Please retry; if the problem continues, contact the administrator.','error')
     return render_template('new_request.html',duplicate_matches=[],form_data={})
+
+
+@app.route('/requests/<int:rid>/delete', methods=['POST'])
+@roles_required('sales')
+def delete_own_request(rid):
+    with db() as con:
+        row=con.execute('SELECT * FROM requests WHERE id=?',(rid,)).fetchone()
+        if not row: abort(404)
+        if row['created_by']!=session['user_id']: abort(403)
+        if row['ceo_approved'] or row['status'] in ('CEO Approved','Under Review','Documents Required','Approved for Payment','Payment Processed','Closed'):
+            flash('This request can no longer be deleted because it has entered or passed the approval/processing workflow. Ask an administrator to correct it.','error')
+            return redirect(url_for('request_detail',rid=rid))
+        files=con.execute('SELECT stored_name FROM attachments WHERE request_id=?',(rid,)).fetchall()
+        # Remove database-linked records in one transaction; external files are cleaned up below.
+        con.execute('DELETE FROM requests WHERE id=?',(rid,))
+    client=storage_client()
+    for file_row in files:
+        stored=file_row['stored_name']
+        try:
+            if client:
+                client.storage.from_(SUPABASE_STORAGE_BUCKET).remove([stored])
+            else:
+                path=UPLOAD_DIR / stored
+                if path.is_file(): path.unlink()
+        except Exception:
+            logging.exception('Attachment cleanup failed after refund request deletion')
+    flash('Your refund request was deleted because it had not been CEO-approved.','success')
+    return redirect(url_for('dashboard'))
 
 @app.route('/requests/<int:rid>/ceo-decision', methods=['POST'])
 @roles_required('ceo')
