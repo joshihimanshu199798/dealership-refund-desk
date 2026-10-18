@@ -127,3 +127,29 @@
 .stat-card-link:hover{transform:translateY(-2px);box-shadow:0 9px 24px #2538580d}
 @media(max-width:900px){.app-shell{grid-template-columns:1fr}.app-sidebar{position:relative;top:auto;height:auto;min-height:0;display:flex;flex-direction:row;align-items:center;gap:6px;padding:9px 12px;border-right:0;border-bottom:1px solid #e5e9f0;overflow-x:auto;white-space:nowrap}.sidebar-label,.sidebar-bottom{display:none}.nav-link{flex:0 0 auto;min-height:36px;padding:9px 11px}.nav-link span:last-child{display:inline}.workspace .container{min-height:calc(100vh - 170px)}}
 @media(max-width:560px){.topbar{padding:10px 12px;min-height:64px}.brand{font-size:14px;gap:9px}.brandmark{width:36px;height:36px}.userbox{gap:7px}.userbox .btn{padding:8px 10px;font-size:11px}.app-sidebar{padding:7px 9px;gap:5px}.nav-link{font-size:11px;padding:9px 10px}.workspace .container{padding:20px 12px}.workspace footer{padding:13px 12px;line-height:1.5}}
+
+
+/* Final safeguard: keep dashboard filters and Reset inside the panel at every width */
+.panel .filters{
+  grid-template-columns:minmax(0,1.35fr) minmax(125px,.8fr) minmax(140px,.9fr) minmax(76px,auto) minmax(76px,auto);
+  width:100%;
+  max-width:100%;
+  min-width:0;
+}
+.panel .filters > *{min-width:0;max-width:100%}
+.panel .filters > .btn{padding-left:12px;padding-right:12px;white-space:nowrap}
+.panel .filters > a.btn{justify-self:stretch}
+@media(max-width:1200px){
+  .panel .filters{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .panel .filters > input{grid-column:1 / -1}
+  .panel .filters .sort-control,
+  .panel .filters > select{grid-column:auto}
+  .panel .filters > .btn{width:100%;justify-self:stretch}
+}
+@media(max-width:560px){
+  .panel .filters{grid-template-columns:minmax(0,1fr)}
+  .panel .filters > input,
+  .panel .filters .sort-control,
+  .panel .filters > select,
+  .panel .filters > .btn{grid-column:1;width:100%;min-width:0}
+}
