@@ -1,47 +1,15 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{% block title %}Dashboard{% endblock %} · Dealership Refund Desk</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{% block title %}Dashboard{% endblock %} · Dealership Refund Desk</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
 <body>
-<header class="topbar">
-  <a class="brand" href="{{ url_for('dashboard') }}"><span class="brandmark">RD</span><span>Refund Desk<small>Dealership Operations</small></span></a>
-  {% if session.get('user_id') %}
-  <div class="userbox"><span>{{ session.get('name') }}<small>{{ session.get('role')|title }}</small></span><a class="btn btn-ghost" href="{{ url_for('logout') }}">Sign out</a></div>
-  {% endif %}
-</header>
-{% if session.get('user_id') %}
-<div class="app-shell">
-  <aside class="app-sidebar" aria-label="Main navigation">
-    <div class="sidebar-label">WORKSPACE</div>
-    <a class="nav-link {% if request.endpoint == 'dashboard' %}nav-active{% endif %}" href="{{ url_for('dashboard') }}"><span class="nav-icon">▦</span><span>Dashboard</span></a>
-    {% if session.get('role') in ['sales','admin'] %}
-    <a class="nav-link {% if request.endpoint == 'new_request' %}nav-active{% endif %}" href="{{ url_for('new_request') }}"><span class="nav-icon">＋</span><span>New refund request</span></a>
-    {% endif %}
-    <a class="nav-link" href="{{ url_for('dashboard') }}"><span class="nav-icon">◷</span><span>Refund requests</span></a>
-    {% if session.get('role') in ['accounts','admin'] %}
-    <div class="sidebar-label sidebar-label-spaced">ACCOUNTS</div>
-    <a class="nav-link" href="{{ url_for('dashboard',status='Documents Required') }}"><span class="nav-icon">▤</span><span>Documents required</span></a>
-    <a class="nav-link" href="{{ url_for('dashboard',overdue=1) }}"><span class="nav-icon">◷</span><span>Overdue queue</span></a>
-    <a class="nav-link" href="{{ url_for('dashboard',status='Payment Processed') }}"><span class="nav-icon">✓</span><span>Processed refunds</span></a>
-    {% endif %}
-    {% if session.get('role') == 'admin' %}
-    <div class="sidebar-label sidebar-label-spaced">ADMINISTRATION</div>
-    <a class="nav-link {% if request.endpoint == 'admin_users' %}nav-active{% endif %}" href="{{ url_for('admin_users') }}"><span class="nav-icon">♙</span><span>Manage employees</span></a>
-    {% endif %}
-    <div class="sidebar-bottom"><span class="sidebar-status-dot"></span><span><strong>Workflow workspace</strong><small>Role-based access enabled</small></span></div>
-  </aside>
-  <div class="workspace">
-    <main class="container">{% with messages=get_flashed_messages(with_categories=true) %}{% if messages %}<div class="flashes">{% for category,message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}</div>{% endif %}{% endwith %}{% block content %}{% endblock %}</main>
-    <footer>Internal workflow prototype · Use fictional data until your dealership approves production use.</footer>
-  </div>
-</div>
-{% else %}
-<main class="container">{% with messages=get_flashed_messages(with_categories=true) %}{% if messages %}<div class="flashes">{% for category,message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}</div>{% endif %}{% endwith %}{% block public_content %}{% endblock %}</main>
-<footer>Internal workflow prototype · Use fictional data until your dealership approves production use.</footer>
-{% endif %}
-</body>
-</html>
+<header class="topbar"><a class="brand" href="{{ url_for('dashboard') }}"><span class="brandmark">RD</span><span>Refund Desk<small>Dealership Operations</small></span></a>{% if session.get('user_id') %}<div class="userbox"><span>{{ session.get('name') }}<small>{{ session.get('role')|title }}</small></span><a class="btn btn-ghost" href="{{ url_for('logout') }}">Sign out</a></div>{% endif %}</header>
+{% if session.get('user_id') %}<div class="app-shell"><aside class="app-sidebar" aria-label="Main navigation"><div class="sidebar-label">WORKSPACE</div>
+<a class="nav-link {% if request.endpoint == 'dashboard' %}nav-active{% endif %}" href="{{ url_for('dashboard') }}"><span class="nav-icon">▦</span><span>Dashboard</span></a>
+{% if session.get('role') in ['sales','admin'] %}<a class="nav-link {% if request.endpoint == 'new_request' %}nav-active{% endif %}" href="{{ url_for('new_request') }}"><span class="nav-icon">＋</span><span>New refund request</span></a>{% endif %}
+<a class="nav-link" href="{{ url_for('dashboard') }}"><span class="nav-icon">◷</span><span>Refund requests</span></a>
+{% if session.get('role') in ['accounts','admin'] %}<div class="sidebar-label sidebar-label-spaced">ACCOUNTS</div><a class="nav-link" href="{{ url_for('dashboard',status='Documents Required') }}"><span class="nav-icon">▤</span><span>Documents required</span></a><a class="nav-link" href="{{ url_for('dashboard',overdue=1) }}"><span class="nav-icon">◷</span><span>Overdue queue</span></a><a class="nav-link" href="{{ url_for('dashboard',status='Payment Processed') }}"><span class="nav-icon">✓</span><span>Processed refunds</span></a>{% endif %}
+{% if session.get('role') == 'admin' %}<div class="sidebar-label sidebar-label-spaced">ADMINISTRATION</div><a class="nav-link {% if request.endpoint == 'admin_users' %}nav-active{% endif %}" href="{{ url_for('admin_users') }}"><span class="nav-icon">♙</span><span>Manage employees</span></a>{% endif %}
+<div class="sidebar-bottom"><span class="sidebar-status-dot"></span><span><strong>Workflow workspace</strong><small>Role-based access enabled</small></span></div></aside><div class="workspace">{% else %}<div class="workspace workspace-public">{% endif %}
+<main class="container">{% with messages=get_flashed_messages(with_categories=true) %}{% if messages %}<div class="flashes">{% for category,message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}</div>{% endif %}{% endwith %}{% block content %}{% endblock %}</main>
+<footer>Internal workflow prototype · Use fictional data until your dealership approves production use.</footer></div>{% if session.get('user_id') %}</div>{% endif %}
+</body></html>
