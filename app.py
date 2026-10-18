@@ -387,6 +387,49 @@ def dashboard():
     return render_template('dashboard.html',requests=visible,counts=counts,dashboard_stats=dashboard_stats,q=q,selected_status=status,sort=sort,overdue_count=overdue_count,overdue_only=request.args.get('overdue')=='1',sla_days=sla_days)
 
 
+@app.route('/requests/ceo-bulk-approve', methods=['POST'])
+@roles_required('ceo')
+def ceo_bulk_approve():
+    raw_ids=request.form.getlist('request_ids')
+    ids=[]
+    for value in raw_ids:
+        try:
+            rid=int(value)
+            if rid>0 and rid not in ids: ids.append(rid)
+        except (TypeError,ValueError):
+            continue
+    if not ids:
+        flash('Select at least one pending refund to approve.','error')
+        return redirect(url_for('dashboard',status='Pending CEO Approval'))
+    stamp=now()
+    approved_count=0
+    skipped_count=0
+    notify_rows=[]
+    with db() as con:
+        for rid in ids:
+            row=con.execute('SELECT r.*,u.name AS requester FROM requests r JOIN users u ON u.id=r.created_by WHERE r.id=?',(rid,)).fetchone()
+            # Re-check eligibility server-side; the browser selection is not trusted.
+            if not row or row['ceo_approved'] or row['status'] in ('Rejected','Closed','Payment Processed'):
+                skipped_count+=1
+                continue
+            previous=row['ceo_decision'] or 'Pending'
+            next_status='CEO Approved' if row['status'] in ('Pending CEO Approval','CEO Approved','Rejected','Submitted') else row['status']
+            con.execute('UPDATE requests SET status=?,ceo_approved=1,ceo_decision=?,ceo_approved_by=?,ceo_approved_at=?,ceo_comments=NULL,updated_at=? WHERE id=?',
+                        (next_status,'Approve',session['user_id'],stamp,stamp,rid))
+            log_action(con,rid,'CEO decision' if previous=='Pending' else 'CEO decision changed',
+                       f'{previous} → Approve by {session.get("name","CEO")} (bulk dashboard approval).')
+            notify_rows.append(dict(row))
+            approved_count+=1
+    for row in notify_rows:
+        send_notification(accounts_recipients(),f"CEO approved refund {row['request_no']}",
+                          f"The CEO approved this refund from the dashboard bulk-approval action.\\n\\n{request_summary(row)}\\nAccounts may now review and process it.",row['id'])
+    if approved_count:
+        flash(f'Approved {approved_count} refund request(s). Each decision was recorded in its activity log.','success')
+    if skipped_count:
+        flash(f'Skipped {skipped_count} request(s) because they were no longer eligible for approval.','error')
+    return redirect(url_for('dashboard',status='Pending CEO Approval'))
+
+
 @app.route('/reports/refunds.csv')
 @roles_required('cashier','accounts','admin')
 def export_refunds_csv():
