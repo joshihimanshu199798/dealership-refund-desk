@@ -495,14 +495,25 @@ def ceo_decision(rid):
     with db() as con:
         r=con.execute('SELECT * FROM requests WHERE id=?',(rid,)).fetchone()
         if not r: abort(404)
-        if r['ceo_approved'] or r['status'] in ('Rejected','Closed','Payment Processed'):
-            flash('This request is no longer awaiting a CEO decision.','error')
+        if r['status'] in ('Closed','Payment Processed'):
+            flash('CEO decisions cannot be changed after payment processing or closure.','error')
             return redirect(url_for('request_detail',rid=rid))
+        previous_decision=r['ceo_decision'] or 'Pending'
         approved=1 if decision=='Approve' else 0
-        status='CEO Approved' if approved else ('Rejected' if decision=='Reject' else 'Submitted')
+        if decision=='Reject':
+            status='Rejected'
+        elif decision=='Return for correction':
+            status='Submitted'
+        elif r['status'] in ('Pending CEO Approval','CEO Approved','Rejected','Submitted'):
+            status='CEO Approved'
+        else:
+            # Preserve the Accounts workflow stage when the CEO re-confirms approval.
+            status=r['status']
         stamp=now()
         con.execute('UPDATE requests SET status=?,ceo_approved=?,ceo_decision=?,ceo_approved_by=?,ceo_approved_at=?,ceo_comments=?,updated_at=? WHERE id=?',(status,approved,decision,session['user_id'],stamp,comments or None,stamp,rid))
-        log_action(con,rid,'CEO decision',f'{decision} by {session.get("name","CEO")}. {comments}'.strip())
+        log_action(con,rid,'CEO decision changed' if previous_decision!='Pending' else 'CEO decision',f'{previous_decision} → {decision} by {session.get("name","CEO")}. {comments}'.strip())
+        if comments:
+            con.execute('INSERT INTO comments(request_id,user_id,created_at,visibility,body) VALUES(?,?,?,?,?)',(rid,session['user_id'],stamp,'Sales visible',f'CEO decision: {decision}. {comments}'))
         updated=con.execute('SELECT r.*,u.name AS requester FROM requests r JOIN users u ON u.id=r.created_by WHERE r.id=?',(rid,)).fetchone()
     if approved:
         send_notification(accounts_recipients(),f"CEO approved refund {updated['request_no']}",f"The CEO approved this refund.\n\n{request_summary(updated)}\nAccounts may now review and process it.",rid)
@@ -535,18 +546,18 @@ def request_detail(rid):
 @app.route('/requests/<int:rid>/comment',methods=['POST'])
 @login_required
 def add_comment(rid):
-    body=request.form.get('body','').strip(); visibility=request.form.get('visibility','Internal'); notification=None
+    body=request.form.get('body','').strip(); visibility='Sales visible'; notification=None
     with db() as con:
         r=con.execute('SELECT * FROM requests WHERE id=?',(rid,)).fetchone()
         if not r: abort(404)
         if session['role']=='sales' and r['created_by']!=session['user_id']: abort(403)
         if not body: flash('Comment cannot be empty.','error')
         else:
-            if session['role']=='sales': visibility='Internal'
+            # Comments are shared with Sales, Accounts, and CEO so replies stay in one visible thread.
             con.execute('INSERT INTO comments(request_id,user_id,created_at,visibility,body) VALUES(?,?,?,?,?)',(rid,session['user_id'],now(),visibility,body))
             con.execute('UPDATE requests SET updated_at=? WHERE id=?',(now(),rid)); log_action(con,rid,'Comment added',f'{visibility} comment added.')
-            if visibility=='Sales visible' and session['role'] in ('cashier','accounts','admin'):
-                notification=(f"Refund update: {r['request_no']}",f"Accounts added an update to {r['request_no']}.\n\n{body}\n\n{request_summary(r)}")
+            if session['role'] in ('cashier','accounts','admin','ceo'):
+                notification=(f"Refund update: {r['request_no']}",f"{session.get('name','A team member')} added a shared comment to {r['request_no']}.\n\n{body}\n\n{request_summary(r)}")
     if notification: send_notification(sales_recipients(rid),notification[0],notification[1],rid)
     return redirect(url_for('request_detail',rid=rid))
 
