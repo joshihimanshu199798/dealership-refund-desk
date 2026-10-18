@@ -1,0 +1,8 @@
+{% extends 'base.html' %}
+{% block title %}Actionable Alerts{% endblock %}
+{% block content %}
+<div class="page-head"><div><div class="eyebrow">WORK QUEUES / LIVE CHECKS</div><h1>Actionable alerts</h1><p class="muted">Live alerts from current refund records. Open a case to take action; alerts clear automatically when the underlying condition changes.</p></div><a class="btn btn-secondary" href="{{ url_for('dashboard') }}">Dashboard</a></div>
+<section class="panel"><div class="table-wrap"><table><thead><tr><th>Alert</th><th>Details</th><th>Suggested action</th><th></th></tr></thead><tbody>
+{% for a in alerts %}<tr><td><strong>{{ a.kind }}</strong></td><td>{{ a.detail }}</td><td>{{ a.action }}</td><td><a class="btn btn-secondary btn-small" href="{{ a.url }}">Open case →</a></td></tr>{% else %}<tr><td colspan="4" class="empty">No actionable alerts for your role right now.</td></tr>{% endfor %}
+</tbody></table></div><p class="muted small">Alerts are computed from live records, not email notifications. Existing SMTP notifications continue to work when configured. CEO approval remains mandatory before Accounts can process any refund.</p></section>
+{% endblock %}
