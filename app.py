@@ -435,7 +435,7 @@ def admin_users():
 @roles_required('admin')
 def admin_change_password(user_id):
     password=request.form.get('password','')
-    if len(password)<12:
+    if len(password)<8:
         flash('New password must be at least 8 characters.','error')
     elif user_id == session.get('user_id'):
         flash('For security, use a separate password-change flow for your own administrator account.','error')
