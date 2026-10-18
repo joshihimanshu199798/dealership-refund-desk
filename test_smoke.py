@@ -139,6 +139,28 @@ class AppSmokeTests(unittest.TestCase):
         with self.app_module.db() as con: self.assertEqual(con.execute('SELECT status FROM requests WHERE id=?',(rid,)).fetchone()['status'],'CEO Approved')
 
 
+    def test_executive_control_centre_is_restricted_and_renders(self):
+        self.login('admin@example.com','AdminDemo123!')
+        response=self.client.get('/executive')
+        self.assertEqual(response.status_code,200)
+        self.assertIn(b'Executive Control Centre',response.data)
+        self.client.get('/logout')
+        self.login('sales@example.com','SalesDemo123!')
+        self.assertEqual(self.client.get('/executive').status_code,403)
+
+    def test_sla_alerts_include_critical_escalation(self):
+        self.login('sales@example.com','SalesDemo123!')
+        self.client.post('/requests/new',data={'customer_name':'Critical SLA Customer','request_location':'Delhi Test Branch','refund_type':'Booking amount refund','requested_amount':'9000','reason':'SLA test'},follow_redirects=True)
+        with self.app_module.db() as con:
+            con.execute("UPDATE requests SET created_at=?,updated_at=?",( '2026-10-01T10:00:00+00:00','2026-10-01T10:00:00+00:00'))
+        self.client.get('/logout')
+        self.login('admin@example.com','AdminDemo123!')
+        response=self.client.get('/dashboard')
+        self.assertEqual(response.status_code,200)
+        self.assertIn(b'Critical SLA escalation',response.data)
+        executive=self.client.get('/executive')
+        self.assertIn(b'Critical ageing',executive.data)
+
     def test_dashboard_control_centre_and_analytics_render(self):
         self.login('admin@example.com','AdminDemo123!')
         dashboard=self.client.get('/dashboard')
@@ -209,7 +231,7 @@ class AppSmokeTests(unittest.TestCase):
         self.login('accounts@example.com','AccountsDemo123!')
         self.client.post(f'/requests/{rid}/update',data={'status':'Payment Processed','processed_amount':'1200','payment_date':'2026-10-19','utr':'BANK-REF-123'},follow_redirects=True)
         import io
-        csv_data='Date,UTR,Amount,Description\\n2026-10-19,BANK-REF-123,1200,Refund payout\\n2026-10-19,UNKNOWN-REF,500,Unknown payout\\n2026-10-19,BANK-REF-123,1200,Duplicate payout\\n'
+        csv_data='Date,UTR,Amount,Description\n2026-10-19,BANK-REF-123,1200,Refund payout\n2026-10-19,UNKNOWN-REF,500,Unknown payout\n2026-10-19,BANK-REF-123,1200,Duplicate payout\n'
         response=self.client.post('/reconciliation/bank-statement',data={'statement':(io.BytesIO(csv_data.encode()),'bank.csv')},content_type='multipart/form-data')
         self.assertEqual(response.status_code,200)
         self.assertIn(b'Reference + amount matched',response.data)
@@ -223,7 +245,7 @@ class AppSmokeTests(unittest.TestCase):
     def test_bank_statement_upload_validates_format_and_access(self):
         self.login('accounts@example.com','AccountsDemo123!')
         import io
-        bad=self.client.post('/reconciliation/bank-statement',data={'statement':(io.BytesIO(b'Wrong,Columns\\nabc,123\\n'),'bank.csv')},content_type='multipart/form-data')
+        bad=self.client.post('/reconciliation/bank-statement',data={'statement':(io.BytesIO(b'Wrong,Columns\nabc,123\n'),'bank.csv')},content_type='multipart/form-data')
         self.assertEqual(bad.status_code,200)
         self.assertIn(b'UTR/reference column and an Amount column',bad.data)
         self.client.get('/logout')
