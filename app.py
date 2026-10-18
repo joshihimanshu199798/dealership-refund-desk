@@ -1,10 +1,10 @@
-import os, sqlite3, uuid, smtplib, logging
+import os, sqlite3, uuid, smtplib, logging, csv
 from datetime import datetime
 from email.message import EmailMessage
 from functools import wraps
 from pathlib import Path
-from io import BytesIO
-from flask import send_file
+from io import BytesIO, StringIO
+from flask import send_file, Response
 from flask import Flask, render_template, request, redirect, url_for, session, flash, send_from_directory, abort
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -334,6 +334,39 @@ def dashboard():
         if request.args.get('overdue')=='1' and not overdue: continue
         visible.append(item)
     return render_template('dashboard.html',requests=visible,counts=counts,q=q,selected_status=status,sort=sort,overdue_count=overdue_count,overdue_only=request.args.get('overdue')=='1',sla_days=sla_days)
+
+
+@app.route('/reports/refunds.csv')
+@roles_required('cashier','accounts','admin')
+def export_refunds_csv():
+    """Export the current filtered refund queue for authorized finance staff."""
+    q=request.args.get('q','').strip()
+    status=request.args.get('status','').strip()
+    sort=request.args.get('sort','newest').strip().lower()
+    if sort not in ('newest','oldest'): sort='newest'
+    sql='SELECT r.*,u.name AS requester FROM requests r JOIN users u ON u.id=r.created_by WHERE 1=1'
+    args=[]
+    if q:
+        sql+=' AND (r.request_no LIKE ? OR r.customer_name LIKE ? OR r.customer_code LIKE ? OR r.request_location LIKE ? OR r.utr LIKE ?)'
+        args += [f'%{q}%']*5
+    if status and status in STATUSES:
+        sql+=' AND r.status=?'; args.append(status)
+    sql += " ORDER BY r.created_at " + ("ASC" if sort=='oldest' else "DESC") + ", r.id " + ("ASC" if sort=='oldest' else "DESC")
+    sla_days=max(1,int(os.getenv('REFUND_SLA_DAYS','3')))
+    output=StringIO(newline='')
+    writer=csv.writer(output)
+    writer.writerow(['Request number','Created at','Last updated','Customer name','Customer code','Sales location','Refund type','Requested amount (INR)','Status','Priority','Assigned to','Age (days)','Overdue','Payment date','UTR / bank reference','Processed amount (INR)','Created by'])
+    with db() as con:
+        rows=con.execute(sql,args).fetchall()
+    for row in rows:
+        age=request_age_days(row)
+        overdue=is_open_status(row['status']) and age>=sla_days
+        if request.args.get('overdue')=='1' and not overdue: continue
+        writer.writerow([row['request_no'],row['created_at'],row['updated_at'],row['customer_name'],row['customer_code'] or '',row['request_location'] or '',row['refund_type'],f"{row['requested_amount']:.2f}",row['status'],row['priority'],row['assigned_to'] or '',age,'Yes' if overdue else 'No',row['payment_date'] or '',row['utr'] or '',f"{row['processed_amount']:.2f}" if row['processed_amount'] is not None else '',row['requester']])
+    response=Response('\ufeff'+output.getvalue(),mimetype='text/csv; charset=utf-8')
+    response.headers['Content-Disposition']='attachment; filename=refund-queue.csv'
+    response.headers['Cache-Control']='no-store'
+    return response
 
 
 @app.route('/admin/users', methods=['GET','POST'])
