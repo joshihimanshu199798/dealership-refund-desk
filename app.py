@@ -332,7 +332,7 @@ def logout(): session.clear(); return redirect(url_for('login'))
 @login_required
 def dashboard():
     view=request.args.get('view','overview').strip().lower()
-    if view not in ('overview','requests'): view='overview'
+    if view not in ('overview','requests','analytics'): view='overview'
     q=request.args.get('q','').strip()
     status=request.args.get('status','').strip()
     start_date=request.args.get('start_date','').strip()
@@ -408,7 +408,44 @@ def dashboard():
         'awaiting_accounts':sum(1 for r in all_rows if r['ceo_approved'] and r['status'] not in ('Payment Processed','Closed','Rejected')),
     }
     visible_value=sum(float(r['requested_amount'] or 0) for r in visible)
-    return render_template('dashboard.html',requests=visible,counts=counts,dashboard_stats=dashboard_stats,q=q,selected_status=status,sort=sort,approval_filter=approval_filter,overdue_count=overdue_count,overdue_only=request.args.get('overdue')=='1',sla_days=sla_days,view=view,start_date=start_date,end_date=end_date,visible_value=visible_value,visible_count=len(visible))
+    # Smart control-centre alerts are built only from the user's permitted portfolio.
+    priority_alerts=[]
+    high_value_threshold=float(os.getenv('HIGH_VALUE_REFUND_THRESHOLD','100000'))
+    for r in all_rows:
+        age=request_age_days(r)
+        if not is_open_status(r['status']):
+            continue
+        if not r['ceo_approved'] and r['status'] not in ('Rejected','Closed','Payment Processed'):
+            priority_alerts.append({'title':'CEO decision required','detail':f"{r['request_no']} · {r['customer_name']}",'amount':float(r['requested_amount'] or 0),'age':age,'priority':0,'url':url_for('dashboard',view='requests',status='Pending CEO Approval')})
+        if r['status']=='Documents Required':
+            priority_alerts.append({'title':'Missing documents','detail':f"{r['request_no']} · {r['customer_name']}",'amount':float(r['requested_amount'] or 0),'age':age,'priority':1,'url':url_for('dashboard',view='requests',status='Documents Required')})
+        if age>=sla_days:
+            priority_alerts.append({'title':'SLA overdue','detail':f"{r['request_no']} · {r['customer_name']} · {age} days",'amount':float(r['requested_amount'] or 0),'age':age,'priority':2,'url':url_for('dashboard',view='requests',overdue=1)})
+        if float(r['requested_amount'] or 0)>=high_value_threshold:
+            priority_alerts.append({'title':'High-value refund','detail':f"{r['request_no']} · {r['customer_name']}",'amount':float(r['requested_amount'] or 0),'age':age,'priority':3,'url':url_for('request_detail',rid=r['id'])})
+    priority_alerts.sort(key=lambda item:(item['priority'],-item['age'],-item['amount']))
+    priority_alerts=priority_alerts[:8]
+    from collections import defaultdict
+    from datetime import date
+    month_totals=defaultdict(float); month_counts=defaultdict(int); branch_totals=defaultdict(float); branch_counts=defaultdict(int)
+    today=date.today(); month_keys=[]
+    for offset in range(5,-1,-1):
+        year=today.year; month=today.month-offset
+        while month<=0:
+            month+=12; year-=1
+        key=f'{year:04d}-{month:02d}'; month_keys.append(key); month_totals[key]=0.0; month_counts[key]=0
+    for r in all_rows:
+        created=parse_dt(r['created_at'])
+        key=created.strftime('%Y-%m') if created else ''
+        if key in month_totals:
+            month_totals[key]+=float(r['requested_amount'] or 0); month_counts[key]+=1
+        branch=(r['request_location'] or '').strip() or 'Unspecified location'
+        branch_totals[branch]+=float(r['requested_amount'] or 0); branch_counts[branch]+=1
+    analytics_months=[{'label':key,'count':month_counts[key],'value':month_totals[key]} for key in month_keys]
+    analytics_branches=[{'name':name,'count':branch_counts[name],'value':branch_totals[name]} for name in sorted(branch_totals,key=lambda n:(-branch_totals[n],n.lower()))[:8]]
+    analytics_statuses=[{'name':s,'count':counts[s]} for s in STATUSES if counts[s]]
+    analytics={'requested_total':dashboard_stats['total_value'],'processed_total':dashboard_stats['processed_value'],'open_count':sum(1 for r in all_rows if is_open_status(r['status'])),'avg_age':dashboard_stats['avg_age'],'months':analytics_months,'branches':analytics_branches,'statuses':analytics_statuses}
+    return render_template('dashboard.html',requests=visible,counts=counts,dashboard_stats=dashboard_stats,q=q,selected_status=status,sort=sort,approval_filter=approval_filter,overdue_count=overdue_count,overdue_only=request.args.get('overdue')=='1',sla_days=sla_days,view=view,start_date=start_date,end_date=end_date,visible_value=visible_value,visible_count=len(visible),priority_alerts=priority_alerts,analytics=analytics,high_value_threshold=high_value_threshold)
 
 
 @app.route('/requests/ceo-bulk-approve', methods=['POST'])
