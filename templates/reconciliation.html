@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block title %}Payment reconciliation{% endblock %}
+{% block content %}
+<div class="page-head"><div><div class="eyebrow">ACCOUNTS / PAYMENT CONTROL</div><h1>Payment reconciliation</h1><p class="muted">Review recorded refund payments for duplicate bank references, missing payment details, and differences between requested and processed amounts. Flags are for human review; they do not change refund status.</p></div></div>
+<div class="recon-kpis">
+  <div class="analytics-kpi"><span>Payment records</span><strong>{{ summary.records }}</strong><small>With payment data or processed status</small></div>
+  <div class="analytics-kpi"><span>Matched records</span><strong>{{ summary.matched }}</strong><small>Unique reference, complete details, equal amounts</small></div>
+  <div class="analytics-kpi"><span>Amount variances</span><strong>{{ summary.variance }}</strong><small>Requested vs processed differs</small></div>
+  <div class="analytics-kpi"><span>Duplicate references</span><strong>{{ summary.duplicate }}</strong><small>Same UTR/reference appears more than once</small></div>
+  <div class="analytics-kpi"><span>Incomplete records</span><strong>{{ summary.incomplete }}</strong><small>Processed/closed record missing payment details</small></div>
+  <div class="analytics-kpi"><span>Recorded processed value</span><strong>₹{{ summary.processed_total|inr(0) }}</strong><small>Processed and closed records only</small></div>
+</div>
+<section class="panel">
+  <form class="filters" method="get">
+    <input name="q" value="{{ q }}" placeholder="Search request, customer, location or UTR…" aria-label="Search payment records">
+    <select name="issue" aria-label="Filter reconciliation result">
+      <option value="all" {% if issue_filter=='all' %}selected{% endif %}>All results</option>
+      <option value="matched" {% if issue_filter=='matched' %}selected{% endif %}>Matched</option>
+      <option value="variance" {% if issue_filter=='variance' %}selected{% endif %}>Amount variance</option>
+      <option value="duplicate" {% if issue_filter=='duplicate' %}selected{% endif %}>Duplicate UTR</option>
+      <option value="incomplete" {% if issue_filter=='incomplete' %}selected{% endif %}>Missing payment data</option>
+    </select>
+    <button class="btn btn-secondary">Filter</button><a class="btn btn-ghost" href="{{ url_for('payment_reconciliation') }}">Reset</a>
+  </form>
+  <div class="table-wrap"><table><thead><tr><th>Request</th><th>Customer / location</th><th>Status</th><th>Requested</th><th>Processed</th><th>Variance</th><th>Payment date</th><th>UTR / reference</th><th>Reconciliation</th></tr></thead><tbody>
+  {% for p in payments %}
+  <tr><td><a class="request-link" href="{{ url_for('request_detail',rid=p.id) }}">{{ p.request_no }}</a></td><td><strong>{{ p.customer_name }}</strong><small>{{ p.request_location or 'Location not specified' }}</small></td><td>{{ p.status }}</td><td class="money">₹{{ p.requested_value|inr(2) }}</td><td class="money">{% if p.processed_amount is not none %}₹{{ p.processed_value|inr(2) }}{% else %}—{% endif %}</td><td class="money {% if 'variance' in p.issues %}recon-warning{% endif %}">{% if p.processed_amount is not none %}₹{{ p.variance|inr(2) }}{% else %}—{% endif %}</td><td>{{ p.payment_date or '—' }}</td><td>{{ p.utr or '—' }}</td><td><span class="recon-status {% if p.issues and p.issues != ['matched'] %}recon-status-warning{% else %}recon-status-ok{% endif %}">{{ p.issue_label }}</span>{% if p.issues|length > 1 %}<small>Also: {% for issue in p.issues if issue != 'matched' %}{{ issue|title }}{% if not loop.last %}, {% endif %}{% endfor %}</small>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="9" class="empty">No payment records match these filters.</td></tr>{% endfor %}
+  </tbody></table></div>
+  <p class="muted small">A variance can be legitimate (for example, an approved partial payment) and is not proof of fraud. Confirm the bank statement and dealership policy before changing a case. This page does not connect to a bank or independently verify settlement.</p>
+</section>
+{% endblock %}
