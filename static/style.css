@@ -71,3 +71,29 @@
   .main-column .upload-row button{grid-column:1;width:100%;min-width:0}
   .main-column .upload-row button{justify-self:stretch}
 }
+
+
+/* Refund workflow enhancements */
+.duplicate-warning{border:1px solid #f0c36d;background:#fff9e9;border-radius:12px;padding:16px;margin-bottom:22px;overflow:hidden}
+.duplicate-warning h3{margin:0 0 8px;color:#875b11}
+.duplicate-warning p{font-size:12px;line-height:1.55;color:#785f32}
+.duplicate-warning .table-wrap{max-width:100%;overflow:auto}
+.duplicate-confirm{display:flex;flex-direction:row;align-items:flex-start;gap:10px;margin-top:14px;line-height:1.5}
+.duplicate-confirm input{width:auto;min-width:16px;margin-top:2px}
+.sla-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#fff3dc;border:1px solid #f1d39a;border-radius:12px;padding:14px 17px;margin:-5px 0 18px;color:#7b5514}
+.sla-banner strong,.sla-banner small{display:block}
+.sla-banner small{margin-top:4px;font-size:11px;color:#896a32}
+.sla-banner-active{border-color:#d49b35}
+.age-badge{display:inline-flex;align-items:center;white-space:nowrap;border-radius:99px;padding:4px 8px;background:#eef2f7;color:#536278;font-size:10px;font-weight:800}
+.age-badge.overdue{background:#ffebeb;color:#a82d2d}
+.checklist-list{list-style:none;padding:0;margin:14px 0 0;display:grid;gap:9px}
+.checklist-list li{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:9px;font-size:12px;padding:9px 10px;border-radius:8px;background:#f7f9fc}
+.checklist-list li>span{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;font-weight:800}
+.checklist-list li strong{font-size:10px}
+.check-complete>span{background:#dff4e7;color:#207348}
+.check-missing>span{background:#fff0d7;color:#945d0c}
+.check-missing strong{color:#945d0c}
+.check-complete strong{color:#207348}
+.quick-actions{display:flex;flex-wrap:wrap;align-items:center;gap:7px;padding-top:4px}
+.quick-actions small{width:100%;color:#788496;font-size:11px;font-weight:700}
+@media(max-width:560px){.sla-banner{align-items:flex-start;flex-direction:column}.checklist-list li{grid-template-columns:22px minmax(0,1fr)}.checklist-list li strong{grid-column:2}.quick-actions .btn{flex:1}}
