@@ -21,7 +21,9 @@ class AppSmokeTests(unittest.TestCase):
         self.app_module=app_module
         self.client=app_module.app.test_client()
     def tearDown(self): self.tmp.cleanup()
-    def login(self,email,password): return self.client.post('/login',data={'email':email,'password':password},follow_redirects=True)
+    def login(self,email,password):
+        role='sales' if email.startswith('sales') else ('accounts' if email.startswith('accounts') else 'admin')
+        return self.client.post('/login',data={'email':email,'password':password,'login_role':role},follow_redirects=True)
     def test_health_check_confirms_database_is_reachable(self):
         r=self.client.get('/healthz')
         self.assertEqual(r.status_code,200)
