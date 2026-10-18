@@ -280,7 +280,7 @@ def dashboard():
     q=request.args.get('q','').strip(); status=request.args.get('status','').strip()
     sql='SELECT r.*,u.name AS requester FROM requests r JOIN users u ON u.id=r.created_by WHERE 1=1'; args=[]
     if session['role']=='sales': sql+=' AND r.created_by=?'; args.append(session['user_id'])
-    if q: sql+=' AND (r.request_no LIKE ? OR r.customer_name LIKE ? OR r.customer_code LIKE ? OR r.request_location LIKE ? OR r.utr LIKE ?)'; args += [f'%{q}%']*4
+    if q: sql+=' AND (r.request_no LIKE ? OR r.customer_name LIKE ? OR r.customer_code LIKE ? OR r.request_location LIKE ? OR r.utr LIKE ?)'; args += [f'%{q}%']*5
     if status and status in STATUSES: sql+=' AND r.status=?'; args.append(status)
     sql+=" ORDER BY CASE r.priority WHEN 'Urgent' THEN 0 WHEN 'High' THEN 1 ELSE 2 END, r.created_at DESC"
     with db() as con:
