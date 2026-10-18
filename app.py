@@ -500,8 +500,8 @@ def executive_control_centre():
         branch_values[branch]['overdue']+=int(request_age_days(r)>=sla_days)
     branches=[{'name':name,**values} for name,values in branch_values.items()]
     branches.sort(key=lambda x:(-x['value'],x['name'].lower()))
-    recent_pending=sorted(pending,key=lambda r:(-request_age_days(r),-float(r['requested_amount'] or 0)))[:10]
-    critical_cases=sorted(critical,key=lambda r:(-request_age_days(r),-float(r['requested_amount'] or 0)))[:10]
+    recent_pending=[dict(r,age_days=request_age_days(r)) for r in sorted(pending,key=lambda r:(-request_age_days(r),-float(r['requested_amount'] or 0)))[:10]]
+    critical_cases=[dict(r,age_days=request_age_days(r)) for r in sorted(critical,key=lambda r:(-request_age_days(r),-float(r['requested_amount'] or 0)))[:10]]
     metrics={
         'open_count':len(open_rows),
         'open_value':sum(float(r['requested_amount'] or 0) for r in open_rows),
