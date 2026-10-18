@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block title %}Executive Control Centre{% endblock %}
+{% block content %}
+<div class="page-head"><div><div class="eyebrow">GOVERNANCE / EXECUTIVE OVERSIGHT</div><h1>Executive Control Centre</h1><p class="muted">A decision-focused view of approval backlog, refund exposure, ageing and branch risk. All figures are based on recorded requests.</p></div><a class="btn btn-ghost" href="{{ url_for('dashboard') }}">Back to dashboard</a></div>
+<div class="recon-kpis">
+  <a class="analytics-kpi" href="{{ url_for('dashboard',view='requests') }}"><span>Open refund exposure</span><strong>₹{{ metrics.open_value|inr(0) }}</strong><small>{{ metrics.open_count }} open requests</small></a>
+  <a class="analytics-kpi" href="{{ url_for('dashboard',status='Pending CEO Approval') }}"><span>CEO decisions required</span><strong>{{ metrics.pending_count }}</strong><small>₹{{ metrics.pending_value|inr(0) }} requested value</small></a>
+  <a class="analytics-kpi" href="{{ url_for('dashboard',overdue=1) }}"><span>SLA overdue</span><strong>{{ metrics.overdue_count }}</strong><small>₹{{ metrics.overdue_value|inr(0) }} exposure</small></a>
+  <a class="analytics-kpi" href="{{ url_for('dashboard',overdue=1) }}"><span>Critical ageing</span><strong>{{ metrics.critical_count }}</strong><small>{{ sla_days * 2 }}+ days · ₹{{ metrics.critical_value|inr(0) }}</small></a>
+  <div class="analytics-kpi"><span>Unassigned open cases</span><strong>{{ metrics.unassigned_count }}</strong><small>Need an accountable owner</small></div>
+  <div class="analytics-kpi"><span>High-value open cases</span><strong>{{ metrics.high_value_count }}</strong><small>At least ₹{{ high_value_threshold|inr(0) }}</small></div>
+  <div class="analytics-kpi"><span>Processed / closed value</span><strong>₹{{ metrics.processed_value|inr(0) }}</strong><small>Recorded processed amounts</small></div>
+</div>
+<div class="analytics-columns">
+  <section class="panel"><h2>Critical ageing queue</h2><p class="muted">Open for at least {{ sla_days * 2 }} days. Prioritize these cases first.</p>
+    <div class="table-wrap"><table><thead><tr><th>Request</th><th>Customer</th><th>Age</th><th>Requested</th><th>Status</th></tr></thead><tbody>
+    {% for r in critical_cases %}<tr><td><a class="request-link" href="{{ url_for('request_detail',rid=r.id) }}">{{ r.request_no }}</a></td><td>{{ r.customer_name }}<small>{{ r.request_location or 'Location unspecified' }}</small></td><td><span class="age-badge overdue">{{ request_age_days(r) }} days</span></td><td class="money">₹{{ r.requested_amount|inr(2) }}</td><td>{{ r.status }}</td></tr>{% else %}<tr><td colspan="5" class="empty">No critical ageing cases.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+  <section class="panel"><h2>CEO approval queue</h2><p class="muted">Oldest and highest-value requests awaiting a CEO decision.</p>
+    <div class="table-wrap"><table><thead><tr><th>Request</th><th>Customer</th><th>Age</th><th>Requested</th></tr></thead><tbody>
+    {% for r in pending %}<tr><td><a class="request-link" href="{{ url_for('request_detail',rid=r.id) }}">{{ r.request_no }}</a></td><td>{{ r.customer_name }}<small>{{ r.request_location or 'Location unspecified' }}</small></td><td>{{ request_age_days(r) }} days</td><td class="money">₹{{ r.requested_amount|inr(2) }}</td></tr>{% else %}<tr><td colspan="4" class="empty">No CEO decisions pending.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+  <section class="panel analytics-wide"><h2>Branch exposure and ageing</h2><p class="muted">Open refund requests grouped by sales location.</p>
+    <div class="table-wrap"><table><thead><tr><th>Branch / location</th><th>Open cases</th><th>SLA overdue</th><th>Requested exposure</th></tr></thead><tbody>
+    {% for b in branches %}<tr><td>{{ b.name }}</td><td>{{ b.count }}</td><td>{% if b.overdue %}<span class="age-badge overdue">{{ b.overdue }}</span>{% else %}0{% endif %}</td><td class="money">₹{{ b.value|inr(2) }}</td></tr>{% else %}<tr><td colspan="4" class="empty">No open branch exposure.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+</div>
+<p class="muted small">SLA thresholds are configured using REFUND_SLA_DAYS (default {{ sla_days }} days). Critical ageing is twice that threshold. This page provides escalation visibility only; it does not auto-approve or auto-process refunds.</p>
+{% endblock %}
