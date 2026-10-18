@@ -273,7 +273,13 @@ def new_request():
             with db() as con: row=con.execute('SELECT r.*,u.name AS requester FROM requests r JOIN users u ON u.id=r.created_by WHERE r.id=?',(rid,)).fetchone()
             send_notification(accounts_recipients(),f"New refund request {row['request_no']}",f"A new refund request was submitted by {row['requester']}.\n\n{request_summary(row)}\nOpen the Refund Desk to review documents and update the request.",rid)
             flash('Refund request submitted successfully.','success'); return redirect(url_for('request_detail',rid=rid))
-        except (ValueError,sqlite3.Error) as e: flash(str(e),'error')
+        except ValueError as e:
+            flash(str(e),'error')
+        except Exception:
+            # PostgreSQL (psycopg), Supabase Storage and other provider errors
+            # must not produce a raw traceback or leak connection details to users.
+            logging.exception('Refund request submission failed')
+            flash('The refund request could not be saved. Please retry; if the problem continues, contact the administrator.','error')
     return render_template('new_request.html')
 
 @app.route('/requests/<int:rid>')
@@ -343,7 +349,11 @@ def upload_more(rid):
             saved=save_uploads(request.files.getlist('attachments'),rid,request.form.get('category','Additional document')); add_attachments(con,rid,saved)
             if saved: log_action(con,rid,'Attachment uploaded',f'{len(saved)} file(s) added.')
             flash(f'{len(saved)} file(s) uploaded.','success')
-        except ValueError as e: flash(str(e),'error')
+        except ValueError as e:
+            flash(str(e),'error')
+        except Exception:
+            logging.exception('Refund attachment upload failed')
+            flash('The attachment could not be uploaded. Please retry or contact the administrator.','error')
     return redirect(url_for('request_detail',rid=rid))
 
 @app.route('/files/<int:aid>')
