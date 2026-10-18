@@ -2,25 +2,39 @@ services:
   - type: web
     name: dealership-refund-desk
     runtime: docker
-    plan: starter
+    plan: free
     healthCheckPath: /healthz
     autoDeploy: true
     envVars:
-      - key: SECRET_KEY
-        generateValue: true
       - key: FLASK_ENV
         value: production
       - key: COOKIE_SECURE
         value: "true"
       - key: DEMO_MODE
         value: "false"
-      - key: DATABASE_PATH
-        value: /data/refund_desk.db
-      - key: UPLOAD_DIR
-        value: /data/uploads
       - key: PORT
         value: "8080"
-    disk:
-      name: refund-desk-data
-      mountPath: /data
-      sizeGB: 1
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: refund-attachments
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_FROM
+        sync: false
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_STARTTLS
+        value: "true"
+      - key: ACCOUNTS_NOTIFICATION_EMAILS
+        sync: false
