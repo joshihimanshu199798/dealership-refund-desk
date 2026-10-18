@@ -175,8 +175,7 @@ def accounts_recipients():
     with db() as con: return [r['email'] for r in con.execute("SELECT email FROM users WHERE role IN ('cashier','accounts','admin')").fetchall()]
 
 def request_summary(r):
-    return f"Request: {r['request_no']}\nCustomer: {r['customer_name']}\nRefund type: {r['refund_type']}\nRequested amount: INR {r['requested_amount']:,.2f}\nBooking/order: {r['booking_no'] or 'Not provided'}\nCustomer code: {r['customer_code'] or 'Not provided'}\nCurrent status: {r['status']}\nReason: {r['reason']}\n"
-
+    return f"Request: {r['request_no']}\\nCustomer: {r['customer_name']}\\nCustomer code: {r['customer_code'] or 'Not provided'}\\nSales location: {r['request_location'] or 'Not provided'}\\nRefund type: {r['refund_type']}\\nRequested amount: INR {r['requested_amount']:,.2f}\\nBank: {r['bank_name'] or 'Not provided'}\\nAccount number: {r['account_no'] or 'Not provided'}\\nIFSC: {r['ifsc_code'] or 'Not provided'}\\nCurrent status: {r['status']}\\nReason: {r['reason']}\\n"
 def log_action(con,rid,action,details):
     con.execute('INSERT INTO audit_log(request_id,user_id,created_at,action,details) VALUES(?,?,?,?,?)',(rid,session['user_id'],now(),action,details))
 
