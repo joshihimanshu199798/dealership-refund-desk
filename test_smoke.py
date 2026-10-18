@@ -174,4 +174,34 @@ class AppSmokeTests(unittest.TestCase):
         self.assertEqual(response.status_code,200)
         self.assertIn('₹12,34,567.89'.encode(),response.data)
 
+
+    def test_payment_reconciliation_flags_variance_and_duplicate_utr(self):
+        self.login('sales@example.com','SalesDemo123!')
+        for name,amount in [('Variance Customer','1200'),('Duplicate Reference Customer','1200')]:
+            self.client.post('/requests/new',data={'customer_name':name,'request_location':'Delhi Test Branch','refund_type':'Booking amount refund','requested_amount':amount,'reason':'Reconciliation test'},follow_redirects=True)
+        with self.app_module.db() as con:
+            ids=[row['id'] for row in con.execute('SELECT id FROM requests ORDER BY id').fetchall()]
+        for rid in ids:
+            self.approve_as_ceo(rid)
+            self.client.get('/logout')
+            self.login('accounts@example.com','AccountsDemo123!')
+            amount='1000' if rid==ids[0] else '1200'
+            self.client.post(f'/requests/{rid}/update',data={'status':'Payment Processed','processed_amount':amount,'payment_date':'2026-10-19','utr':'DUPLICATE-UTR'},follow_redirects=True)
+            self.client.get('/logout')
+            self.login('sales@example.com','SalesDemo123!')
+        self.client.get('/logout')
+        self.login('accounts@example.com','AccountsDemo123!')
+        page=self.client.get('/reconciliation')
+        self.assertEqual(page.status_code,200)
+        self.assertIn(b'Payment reconciliation',page.data)
+        self.assertIn(b'Amount variance',page.data)
+        self.assertIn(b'Duplicate UTR',page.data)
+        variance=self.client.get('/reconciliation?issue=variance')
+        self.assertIn(b'Variance Customer',variance.data)
+        self.assertNotIn(b'Duplicate Reference Customer',variance.data)
+
+    def test_sales_cannot_open_payment_reconciliation(self):
+        self.login('sales@example.com','SalesDemo123!')
+        self.assertEqual(self.client.get('/reconciliation').status_code,403)
+
 if __name__=='__main__': unittest.main()
