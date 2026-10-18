@@ -351,9 +351,16 @@ def dashboard():
         sql+=' AND r.status=?'
         args.append(status)
     sql += " ORDER BY CASE WHEN lower(r.priority)='super duper important' THEN 0 WHEN lower(r.priority)='urgent' THEN 1 WHEN lower(r.priority)='high' THEN 2 ELSE 3 END, created_at " + ("ASC" if sort=='oldest' else "DESC") + ", id " + ("ASC" if sort=='oldest' else "DESC")
+    role=session.get('role')
+    scope_sql="SELECT r.*,u.name AS requester FROM requests r JOIN users u ON u.id=r.created_by WHERE 1=1"
+    scope_args=[]
+    if role=='sales':
+        scope_sql+=' AND r.created_by=?'; scope_args.append(session['user_id'])
+    elif role=='accounts':
+        scope_sql+=" AND (COALESCE(r.ceo_approved,0)=1 OR r.status IN ('Payment Processed','Closed','Rejected'))"
     with db() as con:
         rows=con.execute(sql,args).fetchall()
-        counts={s:con.execute('SELECT COUNT(*) AS count FROM requests'+(' WHERE created_by=? AND status=?' if session['role']=='sales' else ' WHERE status=?'),((session['user_id'],s) if session['role']=='sales' else (s,))).fetchone()['count'] for s in STATUSES}
+        all_rows=con.execute(scope_sql,scope_args).fetchall()
     sla_days=max(1,int(os.getenv('REFUND_SLA_DAYS','3')))
     visible=[]; overdue_count=0
     for row in rows:
@@ -363,7 +370,21 @@ def dashboard():
         item=dict(row); item['age_days']=age; item['is_overdue']=overdue
         if request.args.get('overdue')=='1' and not overdue: continue
         visible.append(item)
-    return render_template('dashboard.html',requests=visible,counts=counts,q=q,selected_status=status,sort=sort,overdue_count=overdue_count,overdue_only=request.args.get('overdue')=='1',sla_days=sla_days)
+    counts={s:sum(1 for r in all_rows if r['status']==s) for s in STATUSES}
+    all_ages=[request_age_days(r) for r in all_rows]
+    dashboard_stats={
+        'total':len(all_rows),
+        'total_value':sum(float(r['requested_amount'] or 0) for r in all_rows),
+        'pending_ceo':sum(1 for r in all_rows if not r['ceo_approved'] and r['status'] not in ('Rejected','Closed','Payment Processed')),
+        'docs_required':sum(1 for r in all_rows if r['status']=='Documents Required'),
+        'overdue':sum(1 for r in all_rows if is_open_status(r['status']) and request_age_days(r)>=sla_days),
+        'processed':sum(1 for r in all_rows if r['status'] in ('Payment Processed','Closed')),
+        'processed_value':sum(float(r['processed_amount'] or 0) for r in all_rows if r['status'] in ('Payment Processed','Closed')),
+        'unassigned':sum(1 for r in all_rows if not (r['assigned_to'] or '').strip() and r['status'] not in ('Payment Processed','Closed','Rejected')),
+        'avg_age':round(sum(all_ages)/len(all_ages),1) if all_ages else 0,
+        'awaiting_accounts':sum(1 for r in all_rows if r['ceo_approved'] and r['status'] not in ('Payment Processed','Closed','Rejected')),
+    }
+    return render_template('dashboard.html',requests=visible,counts=counts,dashboard_stats=dashboard_stats,q=q,selected_status=status,sort=sort,overdue_count=overdue_count,overdue_only=request.args.get('overdue')=='1',sla_days=sla_days)
 
 
 @app.route('/reports/refunds.csv')
