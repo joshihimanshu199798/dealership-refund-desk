@@ -61,6 +61,35 @@ class AppSmokeTests(unittest.TestCase):
         with self.app_module.db() as con:
             self.assertEqual(con.execute('SELECT COUNT(*) AS count FROM requests').fetchone()['count'],2)
 
+    def test_accounts_cannot_process_before_ceo_approval(self):
+        self.login('sales@example.com','SalesDemo123!')
+        self.client.post('/requests/new',data={'customer_name':'Pending CEO Customer','request_location':'Delhi Test Branch','refund_type':'Booking amount refund','requested_amount':'1200','reason':'Waiting for approval'},follow_redirects=True)
+        with self.app_module.db() as con: rid=con.execute('SELECT id FROM requests').fetchone()['id']
+        self.client.get('/logout')
+        self.login('accounts@example.com','AccountsDemo123!')
+        result=self.client.post(f'/requests/{rid}/update',data={'status':'Payment Processed','processed_amount':'1200','payment_date':'2026-10-18','utr':'TESTUTR'},follow_redirects=True)
+        self.assertIn(b'not eligible for Accounts processing',result.data)
+        with self.app_module.db() as con:
+            row=con.execute('SELECT status,ceo_approved FROM requests WHERE id=?',(rid,)).fetchone()
+            self.assertEqual(row['status'],'Pending CEO Approval')
+            self.assertEqual(row['ceo_approved'],0)
+
+    def test_ceo_approval_is_audited(self):
+        self.login('sales@example.com','SalesDemo123!')
+        self.client.post('/requests/new',data={'customer_name':'CEO Audit Customer','request_location':'Delhi Test Branch','refund_type':'Booking amount refund','requested_amount':'1200','reason':'CEO audit test'},follow_redirects=True)
+        with self.app_module.db() as con: rid=con.execute('SELECT id FROM requests').fetchone()['id']
+        response=self.approve_as_ceo(rid)
+        self.assertEqual(response.status_code,200)
+        with self.app_module.db() as con:
+            row=con.execute('SELECT status,ceo_approved,ceo_decision,ceo_approved_by,ceo_approved_at FROM requests WHERE id=?',(rid,)).fetchone()
+            audit=con.execute("SELECT action,details FROM audit_log WHERE request_id=? AND action='CEO decision'",(rid,)).fetchone()
+            self.assertEqual(row['status'],'CEO Approved')
+            self.assertEqual(row['ceo_approved'],1)
+            self.assertEqual(row['ceo_decision'],'Approve')
+            self.assertIsNotNone(row['ceo_approved_by'])
+            self.assertIsNotNone(row['ceo_approved_at'])
+            self.assertIsNotNone(audit)
+
     def test_accounts_quick_action_updates_status(self):
         self.login('sales@example.com','SalesDemo123!')
         self.client.post('/requests/new',data={'customer_name':'Quick Action Customer','request_location':'Delhi Test Branch','refund_type':'Excess ledger balance','requested_amount':'500','reason':'Test'},follow_redirects=True)
