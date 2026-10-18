@@ -196,3 +196,22 @@
   .request-link{overflow-wrap:anywhere}
   .panel{padding:12px}
 }
+
+
+/* Keep audit history readable without letting it dominate the detail page */
+.audit-list{max-height:360px;overflow-y:auto;overflow-x:hidden;padding-right:7px;overscroll-behavior:contain;scrollbar-width:thin}
+.audit-list>div{padding-bottom:8px;margin-bottom:8px}
+.audit-list p{margin:4px 0 0;overflow-wrap:anywhere}
+.bulk-approve-form{margin:0 0 12px;padding:12px 14px;border:1px solid #e3e9f2;border-radius:12px;background:#fbfcff}
+.bulk-approve-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.bulk-select-all{display:flex;flex-direction:row;align-items:center;gap:8px;font-size:12px;font-weight:700}
+.bulk-select-all input,.bulk-check-col input{width:16px;height:16px;min-width:16px;margin:0;accent-color:#315fa7}
+.bulk-approve-form .muted{margin:8px 0 0;font-size:11px}
+.bulk-check-col{width:54px;text-align:center}
+td.bulk-check-col{text-align:center}
+@media(max-width:560px){
+ .audit-list{max-height:260px}
+ .bulk-approve-head{align-items:stretch;flex-direction:column}
+ .bulk-approve-head .btn{width:100%}
+ .bulk-select-all{font-size:11px}
+}
