@@ -342,9 +342,9 @@ def dashboard():
         sql+=' AND r.created_by=?'
         args.append(session['user_id'])
     elif session['role']=='ceo':
-        sql+=" AND COALESCE(r.ceo_approved,0)=0 AND r.status NOT IN ('Rejected','Closed')"
+        sql+=" AND COALESCE(r.ceo_approved,0)=0 AND r.status NOT IN ('Rejected','Closed','Payment Processed')"
     elif session['role']=='accounts':
-        sql+=' AND COALESCE(r.ceo_approved,0)=1'
+        sql+=" AND (COALESCE(r.ceo_approved,0)=1 OR r.status IN ('Payment Processed','Closed','Rejected'))"
     if q:
         sql+=' AND (r.request_no LIKE ? OR r.customer_name LIKE ? OR r.customer_code LIKE ? OR r.request_location LIKE ? OR r.utr LIKE ?)'
         args += [f'%{q}%']*5
