@@ -22,8 +22,13 @@ class AppSmokeTests(unittest.TestCase):
         self.client=app_module.app.test_client()
     def tearDown(self): self.tmp.cleanup()
     def login(self,email,password):
-        role='sales' if email.startswith('sales') else ('accounts' if email.startswith('accounts') else 'admin')
+        role='sales' if email.startswith('sales') else ('accounts' if email.startswith('accounts') else ('ceo' if email.startswith('ceo') else 'admin'))
         return self.client.post('/login',data={'email':email,'password':password,'login_role':role},follow_redirects=True)
+    def approve_as_ceo(self,rid):
+        self.client.get('/logout')
+        self.login('ceo@example.com','CEOdemo123!!')
+        return self.client.post(f'/requests/{rid}/ceo-decision',data={'decision':'Approve','comments':'Approved for payment review'},follow_redirects=True)
+
     def test_health_check_confirms_database_is_reachable(self):
         r=self.client.get('/healthz')
         self.assertEqual(r.status_code,200)
@@ -40,7 +45,7 @@ class AppSmokeTests(unittest.TestCase):
         self.assertIn(b'Test Customer',r.data)
         with self.app_module.db() as con:
             row=con.execute('SELECT * FROM requests').fetchone()
-            self.assertEqual(row['status'],'Submitted')
+            self.assertEqual(row['status'],'Pending CEO Approval')
     def test_possible_duplicate_requires_explicit_confirmation(self):
         self.login('sales@example.com','SalesDemo123!')
         payload={'customer_name':'Repeat Customer','customer_code':'C-102','request_location':'Delhi Test Branch','refund_type':'Booking amount refund','requested_amount':'12500','reason':'Test refund'}
@@ -60,6 +65,7 @@ class AppSmokeTests(unittest.TestCase):
         self.login('sales@example.com','SalesDemo123!')
         self.client.post('/requests/new',data={'customer_name':'Quick Action Customer','request_location':'Delhi Test Branch','refund_type':'Excess ledger balance','requested_amount':'500','reason':'Test'},follow_redirects=True)
         with self.app_module.db() as con: rid=con.execute('SELECT id FROM requests').fetchone()['id']
+        self.approve_as_ceo(rid)
         self.client.get('/logout')
         self.login('accounts@example.com','AccountsDemo123!')
         result=self.client.post(f'/requests/{rid}/update',data={'status':'Submitted','quick_status':'Under Review','assigned_to':'Accounts Team','priority':'Normal'},follow_redirects=True)
@@ -71,9 +77,11 @@ class AppSmokeTests(unittest.TestCase):
     def test_accounts_can_export_filtered_refund_csv(self):
         self.login('sales@example.com','SalesDemo123!')
         self.client.post('/requests/new',data={'customer_name':'CSV Test Customer','customer_code':'CSV-1','request_location':'Delhi Test Branch','refund_type':'Booking amount refund','requested_amount':'2500','reason':'CSV export test'},follow_redirects=True)
+        with self.app_module.db() as con: rid=con.execute('SELECT id FROM requests').fetchone()['id']
+        self.approve_as_ceo(rid)
         self.client.get('/logout')
         self.login('accounts@example.com','AccountsDemo123!')
-        response=self.client.get('/reports/refunds.csv?status=Submitted')
+        response=self.client.get('/reports/refunds.csv?status=CEO+Approved')
         self.assertEqual(response.status_code,200)
         self.assertIn('text/csv',response.content_type)
         self.assertIn(b'CSV Test Customer',response.data)
@@ -94,10 +102,11 @@ class AppSmokeTests(unittest.TestCase):
         self.login('sales@example.com','SalesDemo123!')
         self.client.post('/requests/new',data={'customer_name':'Test Customer','request_location':'Delhi Test Branch','refund_type':'Booking amount refund','requested_amount':'500','reason':'Test'},follow_redirects=True)
         with self.app_module.db() as con: rid=con.execute('SELECT id FROM requests').fetchone()['id']
+        self.approve_as_ceo(rid)
         self.client.get('/logout')
         self.login('accounts@example.com','AccountsDemo123!')
         r=self.client.post(f'/requests/{rid}/update',data={'status':'Payment Processed'},follow_redirects=True)
         self.assertIn(b'enter payment date, UTR/reference and processed amount',r.data)
-        with self.app_module.db() as con: self.assertEqual(con.execute('SELECT status FROM requests WHERE id=?',(rid,)).fetchone()['status'],'Submitted')
+        with self.app_module.db() as con: self.assertEqual(con.execute('SELECT status FROM requests WHERE id=?',(rid,)).fetchone()['status'],'CEO Approved')
 
 if __name__=='__main__': unittest.main()
