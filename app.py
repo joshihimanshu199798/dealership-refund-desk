@@ -773,9 +773,13 @@ def bank_statement_reconciliation():
                 for item in bank_rows:
                     if item['reference_key']: bank_ref_counts[item['reference_key']]=bank_ref_counts.get(item['reference_key'],0)+1
                 used_app_ids=set()
+                seen_bank_refs=set()
                 for bank in bank_rows:
                     matched=app_by_ref.get(bank['reference_key'],[]) if bank['reference_key'] else []
-                    if len(matched)>1 or (bank['reference_key'] and bank_ref_counts.get(bank['reference_key'],0)>1):
+                    repeated_bank_ref=bool(bank['reference_key'] and bank['reference_key'] in seen_bank_refs)
+                    if bank['reference_key']:
+                        seen_bank_refs.add(bank['reference_key'])
+                    if len(matched)>1 or repeated_bank_ref:
                         state='duplicate'; summary['duplicates']+=1
                         candidate=matched[0] if matched else None
                     elif len(matched)==1:
