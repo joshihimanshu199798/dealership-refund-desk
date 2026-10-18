@@ -666,6 +666,102 @@ def payment_reconciliation():
     return render_template('reconciliation.html',payments=payments,q=q,issue_filter=issue_filter,summary=summary)
 
 
+@app.route('/reconciliation/bank-statement', methods=['GET','POST'])
+@roles_required('cashier','accounts','admin')
+def bank_statement_reconciliation():
+    """Match an uploaded bank CSV in memory; never save statement rows or alter refund records."""
+    results=[]
+    summary={'rows':0,'exact':0,'candidate':0,'unmatched':0,'duplicates':0,'variance':0}
+    errors=[]
+    if request.method == 'POST':
+        upload=request.files.get('statement')
+        if not upload or not upload.filename:
+            errors.append('Choose a CSV bank statement to upload.')
+        elif not upload.filename.lower().endswith('.csv'):
+            errors.append('Only CSV files are supported. Export the statement from your bank as CSV.')
+        else:
+            try:
+                raw=upload.stream.read(MAX_BYTES + 1)
+                if len(raw)>MAX_BYTES:
+                    raise ValueError('The CSV exceeds the 10 MB upload limit.')
+                try:
+                    decoded=raw.decode('utf-8-sig')
+                except UnicodeDecodeError:
+                    decoded=raw.decode('cp1252')
+                reader=csv.DictReader(StringIO(decoded))
+                if not reader.fieldnames:
+                    raise ValueError('The CSV has no header row.')
+                normalized={str(name or '').strip().casefold().replace('_',' ').replace('-',' '):name for name in reader.fieldnames}
+                def column(*names):
+                    for name in names:
+                        if name in normalized: return normalized[name]
+                    return None
+                ref_col=column('utr','utr number','reference','reference number','transaction reference','transaction id','bank reference','cheque/reference no','txn ref')
+                amount_col=column('amount','transaction amount','credit amount','credit','deposit amount','paid amount')
+                date_col=column('date','transaction date','value date','payment date','txn date')
+                desc_col=column('description','narration','particulars','remarks','details')
+                if not ref_col or not amount_col:
+                    raise ValueError('Required columns not found. Include a UTR/reference column and an Amount column. Date and Description are optional.')
+                bank_rows=[]
+                for line_no,row in enumerate(reader,start=2):
+                    if not any(str(v or '').strip() for v in row.values()): continue
+                    if len(bank_rows)>=20000: raise ValueError('The CSV contains more than 20,000 transactions. Split it into smaller files.')
+                    reference=str(row.get(ref_col) or '').strip()
+                    raw_amount=str(row.get(amount_col) or '').strip().replace('₹','').replace(',','').replace('INR','').strip()
+                    try: amount=round(float(raw_amount),2)
+                    except (TypeError,ValueError): raise ValueError(f'Invalid amount on CSV row {line_no}.')
+                    date_value=str(row.get(date_col) or '').strip() if date_col else ''
+                    description=str(row.get(desc_col) or '').strip() if desc_col else ''
+                    bank_rows.append({'line_no':line_no,'reference':reference,'reference_key':reference.casefold(),'amount':amount,'date':date_value,'description':description})
+                if not bank_rows: raise ValueError('No transaction rows were found in the CSV.')
+                with db() as con:
+                    app_rows=con.execute("""SELECT r.id,r.request_no,r.customer_name,r.request_location,r.status,r.payment_date,r.utr,r.processed_amount,r.requested_amount
+                        FROM requests r WHERE r.status IN ('Payment Processed','Closed') OR r.payment_date IS NOT NULL OR r.utr IS NOT NULL OR r.processed_amount IS NOT NULL""").fetchall()
+                app_by_ref={}
+                for item in app_rows:
+                    key=str(item['utr'] or '').strip().casefold()
+                    if key: app_by_ref.setdefault(key,[]).append(item)
+                bank_ref_counts={}
+                for item in bank_rows:
+                    if item['reference_key']: bank_ref_counts[item['reference_key']]=bank_ref_counts.get(item['reference_key'],0)+1
+                used_app_ids=set()
+                for bank in bank_rows:
+                    matched=app_by_ref.get(bank['reference_key'],[]) if bank['reference_key'] else []
+                    if len(matched)>1 or (bank['reference_key'] and bank_ref_counts.get(bank['reference_key'],0)>1):
+                        state='duplicate'; summary['duplicates']+=1
+                        candidate=matched[0] if matched else None
+                    elif len(matched)==1:
+                        candidate=matched[0]
+                        if candidate['id'] in used_app_ids:
+                            state='duplicate'; summary['duplicates']+=1
+                        elif candidate['processed_amount'] is not None and abs(float(candidate['processed_amount'])-bank['amount'])>0.009:
+                            state='variance'; summary['variance']+=1
+                        else:
+                            state='exact'; summary['exact']+=1; used_app_ids.add(candidate['id'])
+                    else:
+                        candidate=None
+                        # Amount/date is a review-only hint, never an automatic match.
+                        possible=[]
+                        for item in app_rows:
+                            if item['id'] in used_app_ids or item['processed_amount'] is None: continue
+                            if abs(float(item['processed_amount'])-bank['amount'])>0.009: continue
+                            if bank['date'] and item['payment_date'] and bank['date'][:10]!=str(item['payment_date'])[:10]: continue
+                            possible.append(item)
+                        if len(possible)==1:
+                            candidate=possible[0]; state='candidate'; summary['candidate']+=1
+                        else:
+                            state='unmatched'; summary['unmatched']+=1
+                    if state=='exact' and candidate: used_app_ids.add(candidate['id'])
+                    results.append({'line_no':bank['line_no'],'reference':bank['reference'],'amount':bank['amount'],'date':bank['date'],'description':bank['description'],'state':state,'request':candidate})
+                summary['rows']=len(bank_rows)
+            except (ValueError, UnicodeDecodeError) as exc:
+                errors.append(str(exc))
+            except Exception:
+                logging.exception('Bank statement reconciliation failed')
+                errors.append('The statement could not be processed. Check the CSV format and try again.')
+    return render_template('bank_reconciliation.html',results=results,summary=summary,errors=errors)
+
+
 @app.route('/admin/users', methods=['GET','POST'])
 @roles_required('admin')
 def admin_users():
