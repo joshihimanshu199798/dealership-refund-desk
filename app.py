@@ -407,7 +407,8 @@ def dashboard():
         'avg_age':round(sum(all_ages)/len(all_ages),1) if all_ages else 0,
         'awaiting_accounts':sum(1 for r in all_rows if r['ceo_approved'] and r['status'] not in ('Payment Processed','Closed','Rejected')),
     }
-    return render_template('dashboard.html',requests=visible,counts=counts,dashboard_stats=dashboard_stats,q=q,selected_status=status,sort=sort,approval_filter=approval_filter,overdue_count=overdue_count,overdue_only=request.args.get('overdue')=='1',sla_days=sla_days,view=view,start_date=start_date,end_date=end_date)
+    visible_value=sum(float(r['requested_amount'] or 0) for r in visible)
+    return render_template('dashboard.html',requests=visible,counts=counts,dashboard_stats=dashboard_stats,q=q,selected_status=status,sort=sort,approval_filter=approval_filter,overdue_count=overdue_count,overdue_only=request.args.get('overdue')=='1',sla_days=sla_days,view=view,start_date=start_date,end_date=end_date,visible_value=visible_value,visible_count=len(visible))
 
 
 @app.route('/requests/ceo-bulk-approve', methods=['POST'])
