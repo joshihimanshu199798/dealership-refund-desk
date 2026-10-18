@@ -348,8 +348,8 @@ def dashboard():
         # Accounts can see both queues; processing remains gated on CEO approval in detail/update routes.
         pass
     if q:
-        sql+=' AND (r.request_no LIKE ? OR r.customer_name LIKE ? OR r.customer_code LIKE ? OR r.request_location LIKE ? OR r.utr LIKE ?)'
-        args += [f'%{q}%']*5
+        sql+=' AND (r.request_no LIKE ? OR r.customer_name LIKE ? OR r.customer_code LIKE ? OR r.request_location LIKE ? OR r.utr LIKE ? OR r.booking_no LIKE ? OR r.customer_phone LIKE ? OR r.customer_email LIKE ? OR r.vehicle_model LIKE ? OR r.vin LIKE ?)'
+        args += [f'%{q}%']*10
     approval_filter=request.args.get('approval','all').strip().lower()
     if approval_filter not in ('all','approved','pending'): approval_filter='all'
     if session.get('role')=='accounts':
@@ -454,7 +454,7 @@ def export_refunds_csv():
     if session['role']=='accounts':
         sql+=' AND COALESCE(r.ceo_approved,0)=1'
     if q:
-        sql+=' AND (r.request_no LIKE ? OR r.customer_name LIKE ? OR r.customer_code LIKE ? OR r.request_location LIKE ? OR r.utr LIKE ?)'
+        sql+=' AND (r.request_no LIKE ? OR r.customer_name LIKE ? OR r.customer_code LIKE ? OR r.request_location LIKE ? OR r.utr LIKE ? OR r.booking_no LIKE ? OR r.customer_phone LIKE ? OR r.customer_email LIKE ? OR r.vehicle_model LIKE ? OR r.vin LIKE ?)'
         args += [f'%{q}%']*5
     if status and status in STATUSES:
         sql+=' AND r.status=?'; args.append(status)
