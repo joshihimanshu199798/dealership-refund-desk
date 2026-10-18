@@ -83,7 +83,7 @@ def init_db():
     if postgres:
         schema = """
         CREATE TABLE IF NOT EXISTS users(id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('sales','cashier','accounts','admin')));
-        CREATE TABLE IF NOT EXISTS requests(id BIGSERIAL PRIMARY KEY, request_no TEXT UNIQUE NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, created_by BIGINT NOT NULL REFERENCES users(id), assigned_to TEXT, customer_name TEXT NOT NULL, customer_code TEXT, request_location TEXT, customer_phone TEXT, customer_email TEXT, booking_no TEXT, vehicle_model TEXT, vin TEXT, refund_type TEXT NOT NULL, requested_amount DOUBLE PRECISION NOT NULL, reason TEXT NOT NULL, bank_name TEXT, account_last4 TEXT, status TEXT NOT NULL, priority TEXT NOT NULL DEFAULT 'Normal', payment_date TEXT, utr TEXT, processed_amount DOUBLE PRECISION, closure_note TEXT);
+        CREATE TABLE IF NOT EXISTS requests(id BIGSERIAL PRIMARY KEY, request_no TEXT UNIQUE NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, created_by BIGINT NOT NULL REFERENCES users(id), assigned_to TEXT, customer_name TEXT NOT NULL, customer_code TEXT, request_location TEXT, customer_phone TEXT, customer_email TEXT, booking_no TEXT, vehicle_model TEXT, vin TEXT, refund_type TEXT NOT NULL, requested_amount DOUBLE PRECISION NOT NULL, reason TEXT NOT NULL, bank_name TEXT, account_no TEXT, ifsc_code TEXT, account_last4 TEXT, status TEXT NOT NULL, priority TEXT NOT NULL DEFAULT 'Normal', payment_date TEXT, utr TEXT, processed_amount DOUBLE PRECISION, closure_note TEXT);
         CREATE TABLE IF NOT EXISTS comments(id BIGSERIAL PRIMARY KEY, request_id BIGINT NOT NULL REFERENCES requests(id) ON DELETE CASCADE, user_id BIGINT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL, visibility TEXT NOT NULL DEFAULT 'Internal', body TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS attachments(id BIGSERIAL PRIMARY KEY, request_id BIGINT NOT NULL REFERENCES requests(id) ON DELETE CASCADE, uploaded_by BIGINT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL, original_name TEXT NOT NULL, stored_name TEXT NOT NULL, category TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS audit_log(id BIGSERIAL PRIMARY KEY, request_id BIGINT NOT NULL REFERENCES requests(id) ON DELETE CASCADE, user_id BIGINT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL, action TEXT NOT NULL, details TEXT NOT NULL);
@@ -98,6 +98,8 @@ def init_db():
                     con.execute(statement)
             con.execute('ALTER TABLE requests ADD COLUMN IF NOT EXISTS customer_code TEXT')
             con.execute('ALTER TABLE requests ADD COLUMN IF NOT EXISTS request_location TEXT')
+            con.execute('ALTER TABLE requests ADD COLUMN IF NOT EXISTS account_no TEXT')
+            con.execute('ALTER TABLE requests ADD COLUMN IF NOT EXISTS ifsc_code TEXT')
             con.execute('ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check')
             con.execute("ALTER TABLE users ADD CONSTRAINT users_role_check CHECK(role IN ('sales','cashier','accounts','admin'))")
     else:
@@ -114,6 +116,10 @@ def init_db():
                 con.execute('ALTER TABLE requests ADD COLUMN customer_code TEXT')
             if 'request_location' not in columns:
                 con.execute('ALTER TABLE requests ADD COLUMN request_location TEXT')
+            if 'account_no' not in columns:
+                con.execute('ALTER TABLE requests ADD COLUMN account_no TEXT')
+            if 'ifsc_code' not in columns:
+                con.execute('ALTER TABLE requests ADD COLUMN ifsc_code TEXT')
             """)
     with db() as con:
         user_count = con.execute('SELECT COUNT(*) AS count FROM users').fetchone()['count']
@@ -274,7 +280,7 @@ def dashboard():
     q=request.args.get('q','').strip(); status=request.args.get('status','').strip()
     sql='SELECT r.*,u.name AS requester FROM requests r JOIN users u ON u.id=r.created_by WHERE 1=1'; args=[]
     if session['role']=='sales': sql+=' AND r.created_by=?'; args.append(session['user_id'])
-    if q: sql+=' AND (r.request_no LIKE ? OR r.customer_name LIKE ? OR r.booking_no LIKE ? OR r.utr LIKE ?)'; args += [f'%{q}%']*4
+    if q: sql+=' AND (r.request_no LIKE ? OR r.customer_name LIKE ? OR r.customer_code LIKE ? OR r.request_location LIKE ? OR r.utr LIKE ?)'; args += [f'%{q}%']*4
     if status and status in STATUSES: sql+=' AND r.status=?'; args.append(status)
     sql+=" ORDER BY CASE r.priority WHEN 'Urgent' THEN 0 WHEN 'High' THEN 1 ELSE 2 END, r.created_at DESC"
     with db() as con:
@@ -341,7 +347,7 @@ def new_request():
             if any(not request.form.get(k,'').strip() for k in ['customer_name','refund_type','reason']): raise ValueError('Please complete all required fields.')
             created=now()
             with db() as con:
-                cur=con.execute('''INSERT INTO requests(request_no,created_at,updated_at,created_by,customer_name,customer_code,request_location,booking_no,vin,refund_type,requested_amount,reason,bank_name,account_last4,status,priority) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id''',('RF-'+datetime.now().strftime('%y%m')+'-'+uuid.uuid4().hex[:6].upper(),created,created,session['user_id'],request.form['customer_name'].strip(),request.form.get('customer_code','').strip(),request.form.get('request_location','').strip(),request.form.get('booking_no','').strip(),request.form.get('vin','').strip(),request.form['refund_type'],amount,request.form['reason'].strip(),request.form.get('bank_name','').strip(),request.form.get('account_last4','').strip(),'Submitted',request.form.get('priority','Normal')))
+                cur=con.execute('''INSERT INTO requests(request_no,created_at,updated_at,created_by,customer_name,customer_code,request_location,refund_type,requested_amount,reason,bank_name,account_no,ifsc_code,status,priority) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id''',('RF-'+datetime.now().strftime('%y%m')+'-'+uuid.uuid4().hex[:6].upper(),created,created,session['user_id'],request.form['customer_name'].strip(),request.form.get('customer_code','').strip(),request.form.get('request_location','').strip(),request.form['refund_type'],amount,request.form['reason'].strip(),request.form.get('bank_name','').strip(),request.form.get('account_no','').strip(),request.form.get('ifsc_code','').strip().upper() or None,'Submitted',request.form.get('priority','Normal')))
                 rid=cur.fetchone()['id']; add_attachments(con,rid,save_uploads(request.files.getlist('attachments'),rid,'Initial supporting document')); log_action(con,rid,'Request submitted','Refund request created by sales.')
             with db() as con: row=con.execute('SELECT r.*,u.name AS requester FROM requests r JOIN users u ON u.id=r.created_by WHERE r.id=?',(rid,)).fetchone()
             send_notification(accounts_recipients(),f"New refund request {row['request_no']}",f"A new refund request was submitted by {row['requester']}.\n\n{request_summary(row)}\nOpen the Refund Desk to review documents and update the request.",rid)
