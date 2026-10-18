@@ -149,4 +149,29 @@ class AppSmokeTests(unittest.TestCase):
         self.assertIn(b'Six-month trend',analytics.data)
         self.assertIn(b'Branch / location exposure',analytics.data)
 
+
+    def test_indian_currency_formatting(self):
+        self.assertEqual(self.app_module.format_inr(1234567.89), '12,34,567.89')
+        self.assertEqual(self.app_module.format_inr(100000, 0), '1,00,000')
+        self.assertEqual(self.app_module.format_inr(-1234.5), '-1,234.50')
+
+    def test_audit_trail_is_available_to_ceo_and_admin_only(self):
+        self.login('admin@example.com','AdminDemo123!')
+        admin_response=self.client.get('/audit')
+        self.assertEqual(admin_response.status_code,200)
+        self.assertIn(b'Audit trail',admin_response.data)
+        self.client.get('/logout')
+        self.login('sales@example.com','SalesDemo123!')
+        self.assertEqual(self.client.get('/audit').status_code,403)
+        self.client.get('/logout')
+        self.login('ceo@example.com','CEOdemo123!!')
+        self.assertEqual(self.client.get('/audit').status_code,200)
+
+    def test_dashboard_displays_indian_currency_grouping(self):
+        self.login('sales@example.com','SalesDemo123!')
+        self.client.post('/requests/new',data={'customer_name':'Indian Format Customer','request_location':'Delhi Test Branch','refund_type':'Booking amount refund','requested_amount':'1234567.89','reason':'Indian format test'},follow_redirects=True)
+        response=self.client.get('/dashboard?view=requests')
+        self.assertEqual(response.status_code,200)
+        self.assertIn('₹12,34,567.89'.encode(),response.data)
+
 if __name__=='__main__': unittest.main()
