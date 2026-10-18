@@ -152,7 +152,7 @@ def init_db():
         # Set both variables temporarily, deploy once, then remove both variables.
         admin_email = os.getenv('BOOTSTRAP_ADMIN_EMAIL', '').strip().lower()
         admin_password = os.getenv('BOOTSTRAP_ADMIN_PASSWORD', '')
-        if admin_email and admin_password and len(admin_password) >= 12:
+        if admin_email and admin_password and len(admin_password) >= 8:
             exists = con.execute('SELECT id FROM users WHERE lower(email)=?', (admin_email,)).fetchone()
             if not exists:
                 con.execute('INSERT INTO users(name,email,password_hash,role) VALUES(?,?,?,?)',
@@ -284,8 +284,8 @@ def create_user_command():
     email=click.prompt('Email').strip().lower()
     role=click.prompt('Role',type=click.Choice(['sales','accounts','admin','ceo'],case_sensitive=False)).lower()
     password=click.prompt('Password',hide_input=True,confirmation_prompt=True)
-    if len(password)<12:
-        raise click.ClickException('Password must be at least 12 characters.')
+    if len(password)<8:
+        raise click.ClickException('Password must be at least 8 characters.')
     try:
         with db() as con:
             con.execute('INSERT INTO users(name,email,password_hash,role) VALUES(?,?,?,?)',
@@ -412,8 +412,8 @@ def admin_users():
         password = request.form.get('password', '')
         if not name or not email or role not in ('sales', 'accounts', 'admin', 'ceo'):
             flash('Enter a name, valid email, and role.', 'error')
-        elif len(password) < 12:
-            flash('Password must be at least 12 characters.', 'error')
+        elif len(password) < 8:
+            flash('Password must be at least 8 characters.', 'error')
         else:
             try:
                 with db() as con:
@@ -436,7 +436,7 @@ def admin_users():
 def admin_change_password(user_id):
     password=request.form.get('password','')
     if len(password)<12:
-        flash('New password must be at least 12 characters.','error')
+        flash('New password must be at least 8 characters.','error')
     elif user_id == session.get('user_id'):
         flash('For security, use a separate password-change flow for your own administrator account.','error')
     else:
