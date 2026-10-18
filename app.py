@@ -455,7 +455,7 @@ def export_refunds_csv():
         sql+=' AND COALESCE(r.ceo_approved,0)=1'
     if q:
         sql+=' AND (r.request_no LIKE ? OR r.customer_name LIKE ? OR r.customer_code LIKE ? OR r.request_location LIKE ? OR r.utr LIKE ? OR r.booking_no LIKE ? OR r.customer_phone LIKE ? OR r.customer_email LIKE ? OR r.vehicle_model LIKE ? OR r.vin LIKE ?)'
-        args += [f'%{q}%']*5
+        args += [f'%{q}%']*10
     if status and status in STATUSES:
         sql+=' AND r.status=?'; args.append(status)
     sql += " ORDER BY r.created_at " + ("ASC" if sort=='oldest' else "DESC") + ", r.id " + ("ASC" if sort=='oldest' else "DESC")
