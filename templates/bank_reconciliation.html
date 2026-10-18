@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block title %}Bank statement matching{% endblock %}
+{% block content %}
+<div class="page-head"><div><div class="eyebrow">ACCOUNTS / BANK CONTROL</div><h1>Bank statement matching</h1><p class="muted">Upload a CSV statement to compare bank transactions with recorded refund payments. The file is processed in memory and is not stored.</p></div><a class="btn btn-ghost" href="{{ url_for('payment_reconciliation') }}">Back to payment reconciliation</a></div>
+<section class="panel">
+  <h2>Import statement CSV</h2>
+  <p class="muted small">Required columns: UTR/reference and Amount. Optional: Date and Description/Narration. Supports up to 10 MB and 20,000 transactions.</p>
+  <form method="post" enctype="multipart/form-data" class="upload-row">
+    <input type="file" name="statement" accept=".csv,text/csv" required aria-label="Bank statement CSV">
+    <button class="btn btn-primary" type="submit">Upload &amp; match</button>
+  </form>
+  <p class="muted small">Use the bank's original CSV export. Debit/credit columns should be normalized to a single positive refund amount column before import.</p>
+</section>
+{% for error in errors %}<div class="flash error">{{ error }}</div>{% endfor %}
+{% if results %}
+<div class="recon-kpis">
+  <div class="analytics-kpi"><span>Statement rows</span><strong>{{ summary.rows }}</strong><small>Valid transaction rows read</small></div>
+  <div class="analytics-kpi"><span>Reference matches</span><strong>{{ summary.exact }}</strong><small>Reference matched and amount aligned</small></div>
+  <div class="analytics-kpi"><span>Review candidates</span><strong>{{ summary.candidate }}</strong><small>Amount/date hint only; not confirmed</small></div>
+  <div class="analytics-kpi"><span>Amount variances</span><strong>{{ summary.variance }}</strong><small>Same reference, different amount</small></div>
+  <div class="analytics-kpi"><span>Duplicates</span><strong>{{ summary.duplicates }}</strong><small>Repeated bank/app reference</small></div>
+  <div class="analytics-kpi"><span>Unmatched</span><strong>{{ summary.unmatched }}</strong><small>No reliable app match found</small></div>
+</div>
+<section class="panel">
+  <div class="table-wrap"><table><thead><tr><th>CSV row</th><th>Bank date</th><th>Reference</th><th>Amount</th><th>Description</th><th>Refund request candidate</th><th>Result</th></tr></thead><tbody>
+  {% for item in results %}<tr><td>{{ item.line_no }}</td><td>{{ item.date or '—' }}</td><td>{{ item.reference or '—' }}</td><td class="money">₹{{ item.amount|inr(2) }}</td><td>{{ item.description or '—' }}</td><td>{% if item.request %}<a class="request-link" href="{{ url_for('request_detail',rid=item.request.id) }}">{{ item.request.request_no }}</a><small>{{ item.request.customer_name }} · {{ item.request.status }}</small>{% else %}—{% endif %}</td><td><span class="recon-status {% if item.state in ['exact'] %}recon-status-ok{% else %}recon-status-warning{% endif %}">{{ {'exact':'Reference + amount matched','candidate':'Review candidate','variance':'Amount variance','duplicate':'Duplicate reference','unmatched':'Unmatched'}[item.state] }}</span></td></tr>{% endfor %}
+  </tbody></table></div>
+  <p class="muted small">Matching is advisory. Amount/date candidates are not bank confirmations. No refund status, payment details, or audit records are changed by this import; verify transactions and resolve exceptions manually.</p>
+</section>
+{% endif %}
+{% endblock %}
