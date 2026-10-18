@@ -237,3 +237,48 @@ button:disabled,.btn:disabled{opacity:.55;cursor:not-allowed}
   .app-sidebar{scrollbar-width:thin}
   .app-sidebar .nav-link{min-height:42px}
 }
+
+
+/* Smart Refund Control Centre */
+.control-centre{border-color:#dce6f4;background:linear-gradient(180deg,#fff 0%,#fbfcff 100%)}
+.control-centre-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:15px}
+.control-centre-head h2{font-size:19px;letter-spacing:-.3px;margin:5px 0}
+.control-centre-head p{font-size:12px;margin:0}
+.alert-list{display:grid;gap:8px}
+.alert-item{display:flex;align-items:center;gap:12px;min-width:0;padding:12px;border:1px solid #e7ebf2;border-radius:10px;background:#fff;text-decoration:none;color:#25344a;transition:border-color .15s,transform .15s}
+.alert-item:hover{border-color:#9db5db;transform:translateX(2px)}
+.alert-symbol{display:grid;place-items:center;width:34px;height:34px;flex-shrink:0;border-radius:10px;background:#eef3fb;color:#315fa7;font-weight:900}
+.alert-priority-0 .alert-symbol,.alert-priority-2 .alert-symbol{background:#ffeded;color:#a52d2d}
+.alert-priority-1 .alert-symbol{background:#fff4dd;color:#966314}
+.alert-priority-3 .alert-symbol{background:#e7f7ee;color:#176a40}
+.alert-copy{flex:1;min-width:0}
+.alert-copy strong,.alert-copy small{display:block}
+.alert-copy strong{font-size:12px}
+.alert-copy small{font-size:11px;color:#7b8798;margin-top:4px;overflow-wrap:anywhere}
+.alert-value{font-size:12px;font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums}
+.alert-arrow{color:#7d8ba0;font-size:18px}
+.control-centre-clear{display:flex;align-items:center;gap:12px;padding:18px;border:1px dashed #cfe5d8;border-radius:10px;background:#f7fcf9}
+.control-centre-clear>span{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:#dff4e7;color:#207348;font-weight:900}
+.control-centre-clear strong,.control-centre-clear small{display:block}
+.control-centre-clear strong{font-size:12px}
+.control-centre-clear small{margin-top:4px;font-size:11px;color:#7b8798}
+.control-centre-foot,.analytics-note{margin-top:13px;color:#7b8798;font-size:10px;line-height:1.6}
+.analytics-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}
+.analytics-kpi{min-width:0;background:#fff;border:1px solid #e3e8f0;border-radius:13px;padding:18px;box-shadow:0 2px 8px rgba(26,43,73,.035)}
+.analytics-kpi span,.analytics-kpi small{display:block;color:#778397;font-size:11px;line-height:1.5}
+.analytics-kpi strong{display:block;margin:9px 0 6px;font-size:clamp(19px,2vw,27px);letter-spacing:-.6px;overflow-wrap:anywhere}
+.analytics-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.analytics-columns .panel{min-width:0}
+.analytics-wide{grid-column:1/-1}
+.analytics-heading{display:flex;justify-content:space-between;gap:12px}
+.analytics-heading h2,.analytics-columns h2{font-size:16px;margin:0 0 6px}
+.analytics-heading p,.analytics-columns .muted{font-size:11px;line-height:1.5;margin:0 0 16px}
+.analytics-bars{display:grid;gap:15px;margin-top:16px}
+.analytics-bar-row{display:grid;gap:7px}
+.analytics-bar-label{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;font-size:11px}
+.analytics-bar-label strong{font-size:11px;overflow-wrap:anywhere}
+.analytics-bar-label span{color:#758297;text-align:right;font-variant-numeric:tabular-nums}
+.analytics-track{height:8px;border-radius:99px;background:#edf1f7;overflow:hidden}
+.analytics-track span{display:block;height:100%;min-width:0;border-radius:99px;background:linear-gradient(90deg,#3ac9a1,#3976b8)}
+@media(max-width:900px){.analytics-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.analytics-columns{grid-template-columns:minmax(0,1fr)}.analytics-wide{grid-column:auto}}
+@media(max-width:560px){.control-centre-head{flex-direction:column}.control-centre-head .btn{width:100%}.alert-item{gap:8px;padding:10px}.alert-symbol{width:30px;height:30px}.alert-copy small{font-size:10px}.alert-value{font-size:10px}.alert-arrow{display:none}.analytics-grid{gap:8px}.analytics-kpi{padding:12px}.analytics-kpi strong{font-size:20px}.analytics-kpi span,.analytics-kpi small{font-size:10px}.analytics-bar-label{font-size:10px}.analytics-bar-label span{max-width:55%}}
