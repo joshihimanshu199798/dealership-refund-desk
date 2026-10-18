@@ -1,7 +1,7 @@
 # ₹0 initial test deployment plan
 
 ## Do not deploy the current app for real data yet
-The current code uses SQLite and writes attachments to a local folder. Render's free web service does not provide persistent disks; local filesystem data must be treated as ephemeral. Simply adding DATABASE_URL or a storage key to Render does not make the current app use those services. This repository needs a verified PostgreSQL and object-storage implementation before the free-tier deployment can safely store records and attachments.
+The app now has a PostgreSQL backend selected by DATABASE_URL and a private Supabase Storage backend selected by SUPABASE_URL plus SUPABASE_SERVICE_ROLE_KEY. Without those settings it uses SQLite/local files for development. Production mode now refuses to start without PostgreSQL and Supabase Storage configuration. The code integration is committed, but it has not yet been validated against a real Supabase project or a live deployment.
 
 ## Target architecture for a fictional-data pilot
 - Web service: Render free web service. It may sleep after inactivity, has limited resources, and is not intended for production reliability.
@@ -21,4 +21,4 @@ The current code uses SQLite and writes attachments to a local folder. Render's 
 Free services can sleep, have quotas and may change policies. Free database projects can have inactivity pauses and limited backup/recovery guarantees. A free-tier setup can be suitable for a limited demonstration, but should not be described as production-grade durable storage. Keep independent encrypted exports and verify restore procedures.
 
 ## Current verified state
-The GitHub repository contains a Flask MVP, templates, a Dockerfile, Render configuration and smoke-test source. This plan file does not itself implement PostgreSQL or object storage. The live app has not been deployed, and functional tests/email delivery have not been verified.
+The GitHub repository now contains PostgreSQL and Supabase Storage integration code, a Render free-tier blueprint and smoke tests. Cloud credentials and a private bucket still need to be configured; no live app deployment or cloud integration test has been verified. Functional tests and email delivery are not yet confirmed.
