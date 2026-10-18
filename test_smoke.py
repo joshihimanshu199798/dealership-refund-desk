@@ -5,6 +5,9 @@ from pathlib import Path
 class AppSmokeTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
+        os.environ.pop('DATABASE_URL', None)
+        os.environ.pop('SUPABASE_URL', None)
+        os.environ.pop('SUPABASE_SERVICE_ROLE_KEY', None)
         os.environ['DATABASE_PATH']=str(Path(self.tmp.name)/'test.db')
         os.environ['UPLOAD_DIR']=str(Path(self.tmp.name)/'uploads')
         os.environ['DEMO_MODE']='true'
