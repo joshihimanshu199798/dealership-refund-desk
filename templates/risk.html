@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block title %}Refund Risk Centre{% endblock %}
+{% block content %}
+<div class="page-head"><div><div class="eyebrow">GOVERNANCE / PREVENTION</div><h1>Refund Risk & Fraud Detection</h1><p class="muted">Explainable rules flag cases for human review. A score is a triage aid, not proof of fraud and never substitutes for CEO approval.</p></div></div>
+<section class="stat-grid"><div class="stat-card"><span>Requests assessed</span><strong>{{ items|length }}</strong><small>Current visible portfolio</small></div><div class="stat-card"><span>High risk</span><strong>{{ high }}</strong><small>Score 50 or above</small></div><div class="stat-card"><span>Medium risk</span><strong>{{ medium }}</strong><small>Score 25–49</small></div></section>
+<section class="panel"><div class="table-wrap"><table><thead><tr><th>Request</th><th>Customer</th><th>Amount</th><th>Risk</th><th>Why flagged</th><th>Next action</th></tr></thead><tbody>
+{% for item in items %}<tr><td><a class="request-link" href="{{ url_for('request_detail',rid=item.request.id) }}">{{ item.request.request_no }}</a><small>{{ item.request.status }}</small></td><td>{{ item.request.customer_name }}<small>{{ item.request.customer_code or 'No customer code' }}</small></td><td class="money">₹{{ item.request.requested_amount|inr(2) }}</td><td><strong>{{ item.risk.level }} · {{ item.risk.score }}/100</strong></td><td>{% for flag in item.risk.flags %}<div><strong>{{ flag[0] }}</strong><small>{{ flag[1] }}</small></div>{% else %}<span class="muted">No current rule-based flags</span>{% endfor %}</td><td><a class="btn btn-secondary btn-small" href="{{ url_for('request_detail',rid=item.request.id) }}">Investigate</a></td></tr>
+{% else %}<tr><td colspan="6" class="empty">No refund requests to assess.</td></tr>{% endfor %}
+</tbody></table></div><p class="muted small">Rules: possible repeated customer/refund, reused UTR, high value (configurable with REFUND_HIGH_VALUE_THRESHOLD; default ₹1,00,000), missing attachment, and invalid amount. Scores are recomputed from current records.</p></section>
+{% endblock %}
