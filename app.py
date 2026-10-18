@@ -335,6 +335,14 @@ def dashboard():
     if view not in ('overview','requests'): view='overview'
     q=request.args.get('q','').strip()
     status=request.args.get('status','').strip()
+    start_date=request.args.get('start_date','').strip()
+    end_date=request.args.get('end_date','').strip()
+    for date_value in (start_date,end_date):
+        if date_value and (len(date_value)!=10 or parse_dt(date_value) is None or parse_dt(date_value).date().isoformat()!=date_value):
+            start_date=end_date=''
+            break
+    if start_date and end_date and start_date>end_date:
+        start_date=end_date=''
     sort=request.args.get('sort','newest').strip().lower()
     if sort not in ('newest','oldest'):
         sort='newest'
@@ -350,6 +358,10 @@ def dashboard():
     if q:
         sql+=' AND (r.request_no LIKE ? OR r.customer_name LIKE ? OR r.customer_code LIKE ? OR r.request_location LIKE ? OR r.utr LIKE ? OR r.booking_no LIKE ? OR r.customer_phone LIKE ? OR r.customer_email LIKE ? OR r.vehicle_model LIKE ? OR r.vin LIKE ?)'
         args += [f'%{q}%']*10
+    if start_date:
+        sql+=' AND substr(r.created_at,1,10)>=?'; args.append(start_date)
+    if end_date:
+        sql+=' AND substr(r.created_at,1,10)<=?'; args.append(end_date)
     approval_filter=request.args.get('approval','all').strip().lower()
     if approval_filter not in ('all','approved','pending'): approval_filter='all'
     if session.get('role')=='accounts':
@@ -395,7 +407,7 @@ def dashboard():
         'avg_age':round(sum(all_ages)/len(all_ages),1) if all_ages else 0,
         'awaiting_accounts':sum(1 for r in all_rows if r['ceo_approved'] and r['status'] not in ('Payment Processed','Closed','Rejected')),
     }
-    return render_template('dashboard.html',requests=visible,counts=counts,dashboard_stats=dashboard_stats,q=q,selected_status=status,sort=sort,approval_filter=approval_filter,overdue_count=overdue_count,overdue_only=request.args.get('overdue')=='1',sla_days=sla_days,view=view)
+    return render_template('dashboard.html',requests=visible,counts=counts,dashboard_stats=dashboard_stats,q=q,selected_status=status,sort=sort,approval_filter=approval_filter,overdue_count=overdue_count,overdue_only=request.args.get('overdue')=='1',sla_days=sla_days,view=view,start_date=start_date,end_date=end_date)
 
 
 @app.route('/requests/ceo-bulk-approve', methods=['POST'])
