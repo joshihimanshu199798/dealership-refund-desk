@@ -169,6 +169,11 @@ def sales_recipients(rid):
         row=con.execute('SELECT u.email FROM requests r JOIN users u ON u.id=r.created_by WHERE r.id=?',(rid,)).fetchone()
     return [row['email']] if row else []
 
+def ceo_recipients():
+    configured=[x.strip() for x in os.getenv('CEO_NOTIFICATION_EMAILS','').split(',') if x.strip()]
+    if configured: return configured
+    with db() as con: return [r['email'] for r in con.execute("SELECT email FROM users WHERE role='ceo'").fetchall()]
+
 def accounts_recipients():
     configured=[x.strip() for x in os.getenv('ACCOUNTS_NOTIFICATION_EMAILS','').split(',') if x.strip()]
     if configured: return configured
@@ -449,6 +454,36 @@ def new_request():
             flash('The refund request could not be saved. Please retry; if the problem continues, contact the administrator.','error')
     return render_template('new_request.html',duplicate_matches=[],form_data={})
 
+@app.route('/requests/<int:rid>/ceo-decision', methods=['POST'])
+@roles_required('ceo')
+def ceo_decision(rid):
+    decision=request.form.get('decision','').strip()
+    comments=request.form.get('comments','').strip()
+    if decision not in ('Approve','Reject','Return for correction'):
+        flash('Choose a valid CEO decision.','error')
+        return redirect(url_for('request_detail',rid=rid))
+    if decision in ('Reject','Return for correction') and not comments:
+        flash('Add a comment explaining the rejection or required correction.','error')
+        return redirect(url_for('request_detail',rid=rid))
+    with db() as con:
+        r=con.execute('SELECT * FROM requests WHERE id=?',(rid,)).fetchone()
+        if not r: abort(404)
+        if r['ceo_approved'] or r['status'] in ('Rejected','Closed','Payment Processed'):
+            flash('This request is no longer awaiting a CEO decision.','error')
+            return redirect(url_for('request_detail',rid=rid))
+        approved=1 if decision=='Approve' else 0
+        status='CEO Approved' if approved else ('Rejected' if decision=='Reject' else 'Submitted')
+        stamp=now()
+        con.execute('UPDATE requests SET status=?,ceo_approved=?,ceo_decision=?,ceo_approved_by=?,ceo_approved_at=?,ceo_comments=?,updated_at=? WHERE id=?',(status,approved,decision,session['user_id'],stamp,comments or None,stamp,rid))
+        log_action(con,rid,'CEO decision',f'{decision} by {session.get("name","CEO")}. {comments}'.strip())
+        updated=con.execute('SELECT r.*,u.name AS requester FROM requests r JOIN users u ON u.id=r.created_by WHERE r.id=?',(rid,)).fetchone()
+    if approved:
+        send_notification(accounts_recipients(),f"CEO approved refund {updated['request_no']}",f"The CEO approved this refund.\n\n{request_summary(updated)}\nAccounts may now review and process it.",rid)
+    else:
+        send_notification(sales_recipients(rid),f"CEO decision for refund {updated['request_no']}",f"CEO decision: {decision}.\nComments: {comments}\n\n{request_summary(updated)}",rid)
+    flash('CEO decision saved and recorded in the audit history.','success')
+    return redirect(url_for('request_detail',rid=rid))
+
 @app.route('/requests/<int:rid>')
 @login_required
 def request_detail(rid):
@@ -492,6 +527,12 @@ def add_comment(rid):
 @roles_required('cashier','accounts','admin')
 def update_request(rid):
     status=request.form.get('quick_status') or request.form.get('status',''); assigned=request.form.get('assigned_to','').strip(); priority=request.form.get('priority','Normal')
+    with db() as con:
+        gate=con.execute('SELECT ceo_approved,status FROM requests WHERE id=?',(rid,)).fetchone()
+    if not gate: abort(404)
+    if not gate['ceo_approved'] or gate['status'] in ('Rejected','Closed'):
+        flash('This refund is not eligible for Accounts processing until the CEO approves it.','error')
+        return redirect(url_for('request_detail',rid=rid))
     if status not in STATUSES: flash('Invalid status.','error'); return redirect(url_for('request_detail',rid=rid))
     utr=request.form.get('utr','').strip(); paydate=request.form.get('payment_date','').strip(); closure=request.form.get('closure_note','').strip()
     try: processed=float(request.form['processed_amount']) if request.form.get('processed_amount','').strip() else None
