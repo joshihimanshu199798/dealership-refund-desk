@@ -176,6 +176,34 @@ def accounts_recipients():
 
 def request_summary(r):
     return f"Request: {r['request_no']}\\nCustomer: {r['customer_name']}\\nCustomer code: {r['customer_code'] or 'Not provided'}\\nSales location: {r['request_location'] or 'Not provided'}\\nRefund type: {r['refund_type']}\\nRequested amount: INR {r['requested_amount']:,.2f}\\nBank: {r['bank_name'] or 'Not provided'}\\nAccount number: {r['account_no'] or 'Not provided'}\\nIFSC: {r['ifsc_code'] or 'Not provided'}\\nCurrent status: {r['status']}\\nReason: {r['reason']}\\n"
+def parse_dt(value):
+    if not value: return None
+    try: return datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    except (TypeError, ValueError): return None
+
+def request_age_days(row):
+    created = parse_dt(row['created_at'])
+    if not created: return 0
+    current = datetime.now(created.tzinfo) if created.tzinfo else datetime.now()
+    return max(0, (current - created).days)
+
+def is_open_status(status):
+    return status not in ('Payment Processed', 'Closed', 'Rejected')
+
+def duplicate_candidates(form):
+    code=form.get('customer_code','').strip()
+    name=form.get('customer_name','').strip()
+    refund_type=form.get('refund_type','').strip()
+    try: amount=float(form.get('requested_amount','0') or 0)
+    except ValueError: return []
+    if not name or not refund_type or amount<=0: return []
+    with db() as con:
+        if code:
+            rows=con.execute("SELECT id,request_no,created_at,customer_name,customer_code,request_location,refund_type,requested_amount,status FROM requests WHERE (lower(customer_code)=lower(?) OR (lower(customer_name)=lower(?) AND refund_type=? AND ABS(requested_amount-?)<=1.00)) AND status NOT IN ('Rejected','Closed') ORDER BY created_at DESC LIMIT 6",(code,name,refund_type,amount)).fetchall()
+        else:
+            rows=con.execute("SELECT id,request_no,created_at,customer_name,customer_code,request_location,refund_type,requested_amount,status FROM requests WHERE lower(customer_name)=lower(?) AND refund_type=? AND ABS(requested_amount-?)<=1.00 AND status NOT IN ('Rejected','Closed') ORDER BY created_at DESC LIMIT 6",(name,refund_type,amount)).fetchall()
+    return list(rows)
+
 def log_action(con,rid,action,details):
     con.execute('INSERT INTO audit_log(request_id,user_id,created_at,action,details) VALUES(?,?,?,?,?)',(rid,session['user_id'],now(),action,details))
 
@@ -296,7 +324,16 @@ def dashboard():
     with db() as con:
         rows=con.execute(sql,args).fetchall()
         counts={s:con.execute('SELECT COUNT(*) AS count FROM requests'+(' WHERE created_by=? AND status=?' if session['role']=='sales' else ' WHERE status=?'),((session['user_id'],s) if session['role']=='sales' else (s,))).fetchone()['count'] for s in STATUSES}
-    return render_template('dashboard.html',requests=rows,counts=counts,q=q,selected_status=status,sort=sort)
+    sla_days=max(1,int(os.getenv('REFUND_SLA_DAYS','3')))
+    visible=[]; overdue_count=0
+    for row in rows:
+        age=request_age_days(row)
+        overdue=is_open_status(row['status']) and age>=sla_days
+        overdue_count += int(overdue)
+        item=dict(row); item['age_days']=age; item['is_overdue']=overdue
+        if request.args.get('overdue')=='1' and not overdue: continue
+        visible.append(item)
+    return render_template('dashboard.html',requests=visible,counts=counts,q=q,selected_status=status,sort=sort,overdue_count=overdue_count,overdue_only=request.args.get('overdue')=='1',sla_days=sla_days)
 
 
 @app.route('/admin/users', methods=['GET','POST'])
@@ -354,14 +391,22 @@ def new_request():
         try:
             amount=float(request.form.get('requested_amount','0'))
             if amount<=0: raise ValueError('Refund amount must be greater than zero.')
-            if any(not request.form.get(k,'').strip() for k in ['customer_name','refund_type','reason']): raise ValueError('Please complete all required fields.')
+            if any(not request.form.get(k,'').strip() for k in ['customer_name','request_location','refund_type','reason']): raise ValueError('Please complete customer name, sales location, refund type and reason.')
+            matches=duplicate_candidates(request.form)
+            if matches and request.form.get('confirm_possible_duplicate') != 'yes':
+                flash('Possible duplicate refund found. Review the matching requests below before submitting.','error')
+                return render_template('new_request.html',duplicate_matches=matches,form_data=request.form)
             created=now()
             with db() as con:
                 cur=con.execute('''INSERT INTO requests(request_no,created_at,updated_at,created_by,customer_name,customer_code,request_location,refund_type,requested_amount,reason,bank_name,account_no,ifsc_code,status,priority) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id''',('RF-'+datetime.now().strftime('%y%m')+'-'+uuid.uuid4().hex[:6].upper(),created,created,session['user_id'],request.form['customer_name'].strip(),request.form.get('customer_code','').strip(),request.form.get('request_location','').strip(),request.form['refund_type'],amount,request.form['reason'].strip(),request.form.get('bank_name','').strip(),request.form.get('account_no','').strip(),request.form.get('ifsc_code','').strip().upper() or None,'Submitted',request.form.get('priority','Normal')))
                 rid=cur.fetchone()['id']; add_attachments(con,rid,save_uploads(request.files.getlist('attachments'),rid,'Initial supporting document')); log_action(con,rid,'Request submitted','Refund request created by sales.')
             with db() as con: row=con.execute('SELECT r.*,u.name AS requester FROM requests r JOIN users u ON u.id=r.created_by WHERE r.id=?',(rid,)).fetchone()
             send_notification(accounts_recipients(),f"New refund request {row['request_no']}",f"A new refund request was submitted by {row['requester']}.\n\n{request_summary(row)}\nOpen the Refund Desk to review documents and update the request.",rid)
-            flash('Refund request submitted successfully.','success'); return redirect(url_for('request_detail',rid=rid))
+            if matches:
+                flash('Request submitted after duplicate review. Please verify the possible match in the request queue.','error')
+            else:
+                flash('Refund request submitted successfully.','success')
+            return redirect(url_for('request_detail',rid=rid))
         except ValueError as e:
             flash(str(e),'error')
         except Exception:
@@ -369,7 +414,7 @@ def new_request():
             # must not produce a raw traceback or leak connection details to users.
             logging.exception('Refund request submission failed')
             flash('The refund request could not be saved. Please retry; if the problem continues, contact the administrator.','error')
-    return render_template('new_request.html')
+    return render_template('new_request.html',duplicate_matches=[],form_data={})
 
 @app.route('/requests/<int:rid>')
 @login_required
@@ -381,7 +426,16 @@ def request_detail(rid):
         comments=con.execute('SELECT c.*,u.name AS author,u.role FROM comments c JOIN users u ON u.id=c.user_id WHERE request_id=? ORDER BY c.created_at',(rid,)).fetchall()
         attachments=con.execute('SELECT a.*,u.name AS uploader FROM attachments a JOIN users u ON u.id=a.uploaded_by WHERE request_id=? ORDER BY a.created_at DESC',(rid,)).fetchall()
         audit=con.execute('SELECT a.*,u.name AS actor FROM audit_log a JOIN users u ON u.id=a.user_id WHERE request_id=? ORDER BY a.created_at DESC',(rid,)).fetchall() if session['role']!='sales' else []
-    return render_template('detail.html',r=r,comments=comments,attachments=attachments,audit=audit)
+    age_days=request_age_days(r)
+    sla_days=max(1,int(os.getenv('REFUND_SLA_DAYS','3')))
+    checklist=[
+        {'label':'Customer name','complete':bool(r['customer_name'])},
+        {'label':'Sales location','complete':bool(r['request_location'])},
+        {'label':'Customer code','complete':bool(r['customer_code'])},
+        {'label':'Refund reason','complete':bool(r['reason'])},
+        {'label':'Supporting document','complete':bool(attachments)},
+    ]
+    return render_template('detail.html',r=r,comments=comments,attachments=attachments,audit=audit,age_days=age_days,sla_days=sla_days,is_overdue=is_open_status(r['status']) and age_days>=sla_days,checklist=checklist)
 
 @app.route('/requests/<int:rid>/comment',methods=['POST'])
 @login_required
@@ -416,7 +470,11 @@ def update_request(rid):
         if not r: abort(404)
         con.execute('UPDATE requests SET status=?,assigned_to=?,priority=?,utr=?,payment_date=?,processed_amount=?,closure_note=?,updated_at=? WHERE id=?',(status,assigned,priority,utr or None,paydate or None,processed,closure or None,now(),rid))
         log_action(con,rid,'Request updated',f'Status: {r["status"]} → {status}; priority: {priority}.')
+        if assigned and assigned != (r['assigned_to'] or ''):
+            log_action(con,rid,'Request assigned',f'Assigned to {assigned}.')
         updated=con.execute('SELECT r.*,u.name AS requester FROM requests r JOIN users u ON u.id=r.created_by WHERE r.id=?',(rid,)).fetchone()
+    if assigned and assigned != (r['assigned_to'] or ''):
+        send_notification(sales_recipients(rid),f"Refund request assigned: {updated['request_no']}",f"The refund request is now assigned to {assigned}.\n\n{request_summary(updated)}",rid)
     if status=='Payment Processed':
         extra=f"\nProcessed amount: INR {processed:,.2f}\nPayment date: {paydate}\nUTR/reference: {utr}\nClosure note: {closure or '—'}"
         send_notification(sales_recipients(rid),f"Refund processed: {updated['request_no']}",f"Accounts marked the refund as processed. Please share the UTR with the customer as per dealership procedure.\n{extra}\n\n{request_summary(updated)}",rid)
