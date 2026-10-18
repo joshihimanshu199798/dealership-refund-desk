@@ -17,6 +17,11 @@ SUPABASE_URL = os.getenv('SUPABASE_URL', '').strip()
 SUPABASE_SERVICE_ROLE_KEY = os.getenv('SUPABASE_SERVICE_ROLE_KEY', '').strip()
 SUPABASE_STORAGE_BUCKET = os.getenv('SUPABASE_STORAGE_BUCKET', 'refund-attachments').strip()
 _supabase = None
+if os.getenv('FLASK_ENV') == 'production':
+    if not os.getenv('DATABASE_URL', '').strip():
+        raise RuntimeError('DATABASE_URL must point to a persistent PostgreSQL database in production.')
+    if not (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY):
+        raise RuntimeError('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for private production attachment storage.')
 
 def storage_client():
     """Return the configured Supabase service client, or None for local development."""
