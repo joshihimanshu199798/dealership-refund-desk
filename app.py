@@ -341,8 +341,7 @@ def dashboard():
     if session['role']=='sales':
         sql+=' AND r.created_by=?'
         args.append(session['user_id'])
-    elif session['role']=='ceo':
-        sql+=" AND COALESCE(r.ceo_approved,0)=0 AND r.status NOT IN ('Rejected','Closed','Payment Processed')"
+    # CEO sees every refund, including historical and Accounts-stage requests.
     elif session['role']=='accounts':
         sql+=" AND (COALESCE(r.ceo_approved,0)=1 OR r.status IN ('Payment Processed','Closed','Rejected'))"
     if q:
@@ -351,7 +350,7 @@ def dashboard():
     if status and status in STATUSES:
         sql+=' AND r.status=?'
         args.append(status)
-    sql += " ORDER BY created_at " + ("ASC" if sort=='oldest' else "DESC") + ", id " + ("ASC" if sort=='oldest' else "DESC")
+    sql += " ORDER BY CASE WHEN lower(r.priority)='super duper important' THEN 0 WHEN lower(r.priority)='urgent' THEN 1 WHEN lower(r.priority)='high' THEN 2 ELSE 3 END, created_at " + ("ASC" if sort=='oldest' else "DESC") + ", id " + ("ASC" if sort=='oldest' else "DESC")
     with db() as con:
         rows=con.execute(sql,args).fetchall()
         counts={s:con.execute('SELECT COUNT(*) AS count FROM requests'+(' WHERE created_by=? AND status=?' if session['role']=='sales' else ' WHERE status=?'),((session['user_id'],s) if session['role']=='sales' else (s,))).fetchone()['count'] for s in STATUSES}
@@ -555,6 +554,7 @@ def add_comment(rid):
 @roles_required('cashier','accounts','admin')
 def update_request(rid):
     status=request.form.get('quick_status') or request.form.get('status',''); assigned=request.form.get('assigned_to','').strip(); priority=request.form.get('priority','Normal')
+    if priority not in ('Normal','High','Urgent','Super Duper Important'): priority='Normal'
     with db() as con:
         gate=con.execute('SELECT ceo_approved,status FROM requests WHERE id=?',(rid,)).fetchone()
     if not gate: abort(404)
