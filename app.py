@@ -634,7 +634,7 @@ def payment_reconciliation():
         reference=(row['utr'] or '').strip().casefold()
         if reference:
             utr_counts[reference]=utr_counts.get(reference,0)+1
-    payments=[]
+    all_payments=[]
     for row in records:
         requested=float(row['requested_amount'] or 0)
         processed=float(row['processed_amount'] or 0)
@@ -653,14 +653,14 @@ def payment_reconciliation():
         item.update(requested_value=requested,processed_value=processed,
                     variance=round(processed-requested,2),issues=issues,
                     issue_label='Duplicate UTR' if 'duplicate' in issues else ('Missing payment data' if 'incomplete' in issues else ('Amount variance' if 'variance' in issues else ('Recorded payment' if 'matched' in issues else 'Needs review'))))
-        if issue_filter=='all' or issue_filter in issues:
-            payments.append(item)
+        all_payments.append(item)
+    payments=[item for item in all_payments if issue_filter=='all' or issue_filter in item['issues']]
     summary={
         'records':len(records),
-        'matched':sum(1 for x in records if x['status'] in ('Payment Processed','Closed') and (x['utr'] or '').strip() and x['payment_date'] and x['processed_amount'] is not None and float(x['processed_amount'] or 0)>0 and abs(float(x['processed_amount'] or 0)-float(x['requested_amount'] or 0))<=0.009 and utr_counts.get((x['utr'] or '').strip().casefold(),0)==1),
-        'variance':sum(1 for x in payments if 'variance' in x['issues']),
-        'duplicate':sum(1 for x in payments if 'duplicate' in x['issues']),
-        'incomplete':sum(1 for x in payments if 'incomplete' in x['issues']),
+        'matched':sum(1 for x in all_payments if 'matched' in x['issues']),
+        'variance':sum(1 for x in all_payments if 'variance' in x['issues']),
+        'duplicate':sum(1 for x in all_payments if 'duplicate' in x['issues']),
+        'incomplete':sum(1 for x in all_payments if 'incomplete' in x['issues']),
         'processed_total':sum(float(x['processed_amount'] or 0) for x in records if x['status'] in ('Payment Processed','Closed')),
     }
     return render_template('reconciliation.html',payments=payments,q=q,issue_filter=issue_filter,summary=summary)
