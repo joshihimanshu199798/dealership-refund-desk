@@ -1,16 +1,16 @@
 {% extends 'base.html' %}
-{% block title %}Dashboard{% endblock %}
+{% block title %}{% if view == 'requests' %}Refund Requests{% else %}Dashboard{% endif %}{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
-    <div class="eyebrow">WORKSPACE / {{ session.role|upper }} OVERVIEW</div>
-    <h1>{% if session.role == 'ceo' %}Executive refund overview{% elif session.role == 'accounts' %}Accounts operations{% elif session.role == 'sales' %}My refund portfolio{% elif session.role == 'admin' %}Refund desk control centre{% else %}Refund requests{% endif %}</h1>
-    <p class="muted">{% if session.role == 'ceo' %}Review exposure, approval backlog, priority risks, and end-to-end refund progress.{% elif session.role == 'accounts' %}Manage approved cases, documents, payment execution, and ageing work.{% elif session.role == 'sales' %}Track your submitted requests, approval decisions, and next steps from one place.{% elif session.role == 'admin' %}Monitor the full workflow, bottlenecks, ownership, and refund value across teams.{% else %}Keep every request moving with clear ownership and next steps.{% endif %}</p>
+    <div class="eyebrow">WORKSPACE / {{ session.role|upper }} / {% if view == 'requests' %}REFUND REQUESTS{% else %}OVERVIEW{% endif %}</div>
+    <h1>{% if view == 'requests' %}Refund requests{% elif session.role == 'ceo' %}Executive refund overview{% elif session.role == 'accounts' %}Accounts operations{% elif session.role == 'sales' %}My refund portfolio{% elif session.role == 'admin' %}Refund desk control centre{% else %}Refund requests{% endif %}</h1>
+    <p class="muted">{% if view == 'requests' %}Search, filter, and open individual cases here. Use Dashboard for portfolio totals and workflow insights.{% elif session.role == 'ceo' %}Review exposure, approval backlog, priority risks, and end-to-end refund progress.{% elif session.role == 'accounts' %}Manage approved cases, documents, payment execution, and ageing work.{% elif session.role == 'sales' %}Track your submitted requests, approval decisions, and next steps from one place.{% elif session.role == 'admin' %}Monitor the full workflow, bottlenecks, ownership, and refund value across teams.{% else %}Keep every request moving with clear ownership and next steps.{% endif %}</p>
   </div>
   {% if session.role in ['sales','admin'] %}<a class="btn btn-primary" href="{{ url_for('new_request') }}">＋ New refund request</a>{% endif %}
   {% if session.role == 'admin' %}<a class="btn btn-secondary" href="{{ url_for('admin_users') }}">Manage employees</a>{% endif %}
 </div>
-<div class="stat-grid">
+{% if view != "requests" %}<div class="stat-grid">
   <div class="stat-card"><span>{% if session.role == 'sales' %}My requests{% else %}Requests in view{% endif %}</span><strong>{{ dashboard_stats.total }}</strong><small>All statuses in your permitted scope</small></div>
   <div class="stat-card"><span>Total requested value</span><strong>₹{{ '{:,.0f}'.format(dashboard_stats.total_value) }}</strong><small>Requested amount · not yet paid amount</small></div>
   {% if session.role == 'ceo' %}
@@ -38,7 +38,8 @@
     </a>
   {% endfor %}
 </div>
-{% if overdue_count %}
+{% endif %}
+{% if view != "requests" and overdue_count %}
 <div class="sla-banner {% if overdue_only %}sla-banner-active{% endif %}">
   <div><strong>{{ overdue_count }} overdue request{{ '' if overdue_count==1 else 's' }}</strong><small>Open requests waiting {{ sla_days }} days or longer.</small></div>
   {% if overdue_only %}<a class="btn btn-ghost btn-small" href="{{ url_for('dashboard',q=q,status=selected_status,sort=sort) }}">Show all requests</a>{% else %}<a class="btn btn-secondary btn-small" href="{{ url_for('dashboard',overdue=1,q=q,status=selected_status,sort=sort) }}">View overdue</a>{% endif %}
