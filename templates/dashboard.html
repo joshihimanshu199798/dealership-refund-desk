@@ -11,8 +11,8 @@
   {% if session.role == 'admin' %}<a class="btn btn-secondary" href="{{ url_for('admin_users') }}">Manage employees</a>{% endif %}
 </div>
 {% if view != "requests" %}<div class="stat-grid">
-  <div class="stat-card"><span>{% if session.role == 'sales' %}My requests{% else %}Requests in view{% endif %}</span><strong>{{ dashboard_stats.total }}</strong><small>All statuses in your permitted scope</small></div>
-  <div class="stat-card"><span>Total requested value</span><strong>₹{{ '{:,.0f}'.format(dashboard_stats.total_value) }}</strong><small>Requested amount · not yet paid amount</small></div>
+  <a class="stat-card stat-card-link" href="{{ url_for('dashboard',view='requests') }}"><span>{% if session.role == 'sales' %}My requests{% else %}Requests in view{% endif %}</span><strong>{{ dashboard_stats.total }}</strong><small>Open the full request list</small></a>
+  <a class="stat-card stat-card-link" href="{{ url_for('dashboard',view='requests') }}"><span>Total requested value</span><strong>₹{{ '{:,.0f}'.format(dashboard_stats.total_value) }}</strong><small>Open requests behind this total</small></a>
   {% if session.role == 'ceo' %}
     <a class="stat-card stat-card-link" href="{{ url_for('dashboard',status='Pending CEO Approval') }}"><span>Pending CEO approval</span><strong>{{ dashboard_stats.pending_ceo }}</strong><small>Requires a decision</small></a>
     <a class="stat-card stat-card-link" href="{{ url_for('dashboard',overdue=1) }}"><span>Overdue open cases</span><strong>{{ dashboard_stats.overdue }}</strong><small>At least {{ sla_days }} days old</small></a>
