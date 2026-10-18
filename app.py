@@ -252,7 +252,7 @@ def dashboard():
     if session['role']=='sales': sql+=' AND r.created_by=?'; args.append(session['user_id'])
     if q: sql+=' AND (r.request_no LIKE ? OR r.customer_name LIKE ? OR r.booking_no LIKE ? OR r.utr LIKE ?)'; args += [f'%{q}%']*4
     if status and status in STATUSES: sql+=' AND r.status=?'; args.append(status)
-    sql+=' ORDER BY CASE r.priority WHEN 'Urgent' THEN 0 WHEN 'High' THEN 1 ELSE 2 END, r.created_at DESC'
+    sql+=" ORDER BY CASE r.priority WHEN 'Urgent' THEN 0 WHEN 'High' THEN 1 ELSE 2 END, r.created_at DESC"
     with db() as con:
         rows=con.execute(sql,args).fetchall()
         counts={s:con.execute('SELECT COUNT(*) AS count FROM requests'+(' WHERE created_by=? AND status=?' if session['role']=='sales' else ' WHERE status=?'),((session['user_id'],s) if session['role']=='sales' else (s,))).fetchone()['count'] for s in STATUSES}
