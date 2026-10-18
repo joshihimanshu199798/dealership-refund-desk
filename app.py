@@ -82,7 +82,7 @@ def init_db():
     postgres = bool(os.getenv('DATABASE_URL', '').strip())
     if postgres:
         schema = """
-        CREATE TABLE IF NOT EXISTS users(id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('sales','accounts','admin')));
+        CREATE TABLE IF NOT EXISTS users(id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('sales','cashier','accounts','admin')));
         CREATE TABLE IF NOT EXISTS requests(id BIGSERIAL PRIMARY KEY, request_no TEXT UNIQUE NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, created_by BIGINT NOT NULL REFERENCES users(id), assigned_to TEXT, customer_name TEXT NOT NULL, customer_phone TEXT, customer_email TEXT, booking_no TEXT, vehicle_model TEXT, vin TEXT, refund_type TEXT NOT NULL, requested_amount DOUBLE PRECISION NOT NULL, reason TEXT NOT NULL, bank_name TEXT, account_last4 TEXT, status TEXT NOT NULL, priority TEXT NOT NULL DEFAULT 'Normal', payment_date TEXT, utr TEXT, processed_amount DOUBLE PRECISION, closure_note TEXT);
         CREATE TABLE IF NOT EXISTS comments(id BIGSERIAL PRIMARY KEY, request_id BIGINT NOT NULL REFERENCES requests(id) ON DELETE CASCADE, user_id BIGINT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL, visibility TEXT NOT NULL DEFAULT 'Internal', body TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS attachments(id BIGSERIAL PRIMARY KEY, request_id BIGINT NOT NULL REFERENCES requests(id) ON DELETE CASCADE, uploaded_by BIGINT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL, original_name TEXT NOT NULL, stored_name TEXT NOT NULL, category TEXT NOT NULL);
@@ -96,10 +96,12 @@ def init_db():
             for statement in schema.split(';'):
                 if statement.strip():
                     con.execute(statement)
+            con.execute('ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check')
+            con.execute("ALTER TABLE users ADD CONSTRAINT users_role_check CHECK(role IN ('sales','cashier','accounts','admin'))")
     else:
         with db() as con:
             con.executescript("""
-            CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('sales','accounts','admin')));
+            CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('sales','cashier','accounts','admin')));
             CREATE TABLE IF NOT EXISTS requests(id INTEGER PRIMARY KEY AUTOINCREMENT, request_no TEXT UNIQUE NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, created_by INTEGER NOT NULL REFERENCES users(id), assigned_to TEXT, customer_name TEXT NOT NULL, customer_phone TEXT, customer_email TEXT, booking_no TEXT, vehicle_model TEXT, vin TEXT, refund_type TEXT NOT NULL, requested_amount REAL NOT NULL, reason TEXT NOT NULL, bank_name TEXT, account_last4 TEXT, status TEXT NOT NULL, priority TEXT NOT NULL DEFAULT 'Normal', payment_date TEXT, utr TEXT, processed_amount REAL, closure_note TEXT);
             CREATE TABLE IF NOT EXISTS comments(id INTEGER PRIMARY KEY AUTOINCREMENT, request_id INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id), created_at TEXT NOT NULL, visibility TEXT NOT NULL DEFAULT 'Internal', body TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS attachments(id INTEGER PRIMARY KEY AUTOINCREMENT, request_id INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE, uploaded_by INTEGER NOT NULL REFERENCES users(id), created_at TEXT NOT NULL, original_name TEXT NOT NULL, stored_name TEXT NOT NULL, category TEXT NOT NULL);
@@ -157,7 +159,7 @@ def sales_recipients(rid):
 def accounts_recipients():
     configured=[x.strip() for x in os.getenv('ACCOUNTS_NOTIFICATION_EMAILS','').split(',') if x.strip()]
     if configured: return configured
-    with db() as con: return [r['email'] for r in con.execute("SELECT email FROM users WHERE role IN ('accounts','admin')").fetchall()]
+    with db() as con: return [r['email'] for r in con.execute("SELECT email FROM users WHERE role IN ('cashier','accounts','admin')").fetchall()]
 
 def request_summary(r):
     return f"Request: {r['request_no']}\nCustomer: {r['customer_name']}\nRefund type: {r['refund_type']}\nRequested amount: INR {r['requested_amount']:,.2f}\nBooking/order: {r['booking_no'] or 'Not provided'}\nVehicle: {r['vehicle_model'] or 'Not provided'}\nCurrent status: {r['status']}\nReason: {r['reason']}\n"
@@ -213,7 +215,7 @@ def create_user_command():
     import click
     name=click.prompt('Full name')
     email=click.prompt('Email').strip().lower()
-    role=click.prompt('Role',type=click.Choice(['sales','accounts','admin'],case_sensitive=False)).lower()
+    role=click.prompt('Role',type=click.Choice(['sales','cashier','accounts','admin'],case_sensitive=False)).lower()
     password=click.prompt('Password',hide_input=True,confirmation_prompt=True)
     if len(password)<12:
         raise click.ClickException('Password must be at least 12 characters.')
@@ -246,11 +248,13 @@ def home(): return redirect(url_for('dashboard') if 'user_id' in session else ur
 def login():
     if request.method=='POST':
         email=request.form.get('email','').strip().lower(); password=request.form.get('password','')
+        login_role=request.form.get('login_role','')
+        allowed_login_roles={'sales': {'sales'}, 'cashier': {'cashier'}, 'staff': {'accounts','admin'}}
         with db() as con: user=con.execute('SELECT * FROM users WHERE lower(email)=?',(email,)).fetchone()
-        if user and check_password_hash(user['password_hash'],password):
+        if user and check_password_hash(user['password_hash'],password) and user['role'] in allowed_login_roles.get(login_role,set()):
             session.clear(); session.update(user_id=user['id'],name=user['name'],role=user['role'],email=user['email']); session.permanent = True
             return redirect(url_for('dashboard'))
-        flash('Email or password is incorrect.','error')
+        flash('Email, password, or selected login type is incorrect. Choose the login option assigned to your account.','error')
     return render_template('login.html')
 
 @app.route('/logout')
@@ -319,13 +323,13 @@ def add_comment(rid):
             if session['role']=='sales': visibility='Internal'
             con.execute('INSERT INTO comments(request_id,user_id,created_at,visibility,body) VALUES(?,?,?,?,?)',(rid,session['user_id'],now(),visibility,body))
             con.execute('UPDATE requests SET updated_at=? WHERE id=?',(now(),rid)); log_action(con,rid,'Comment added',f'{visibility} comment added.')
-            if visibility=='Sales visible' and session['role'] in ('accounts','admin'):
+            if visibility=='Sales visible' and session['role'] in ('cashier','accounts','admin'):
                 notification=(f"Refund update: {r['request_no']}",f"Accounts added an update to {r['request_no']}.\n\n{body}\n\n{request_summary(r)}")
     if notification: send_notification(sales_recipients(rid),notification[0],notification[1],rid)
     return redirect(url_for('request_detail',rid=rid))
 
 @app.route('/requests/<int:rid>/update',methods=['POST'])
-@roles_required('accounts','admin')
+@roles_required('cashier','accounts','admin')
 def update_request(rid):
     status=request.form.get('status',''); assigned=request.form.get('assigned_to','').strip(); priority=request.form.get('priority','Normal')
     if status not in STATUSES: flash('Invalid status.','error'); return redirect(url_for('request_detail',rid=rid))
