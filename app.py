@@ -344,6 +344,7 @@ def dashboard():
     # CEO sees every refund, including historical and Accounts-stage requests.
     elif session['role']=='accounts':
         # Accounts can see both queues; processing remains gated on CEO approval in detail/update routes.
+        pass
     if q:
         sql+=' AND (r.request_no LIKE ? OR r.customer_name LIKE ? OR r.customer_code LIKE ? OR r.request_location LIKE ? OR r.utr LIKE ?)'
         args += [f'%{q}%']*5
