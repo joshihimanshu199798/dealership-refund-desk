@@ -274,6 +274,36 @@ def dashboard():
         counts={s:con.execute('SELECT COUNT(*) AS count FROM requests'+(' WHERE created_by=? AND status=?' if session['role']=='sales' else ' WHERE status=?'),((session['user_id'],s) if session['role']=='sales' else (s,))).fetchone()['count'] for s in STATUSES}
     return render_template('dashboard.html',requests=rows,counts=counts,q=q,selected_status=status)
 
+
+@app.route('/admin/users', methods=['GET','POST'])
+@roles_required('admin')
+def admin_users():
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        email = request.form.get('email', '').strip().lower()
+        role = request.form.get('role', '').strip()
+        password = request.form.get('password', '')
+        if not name or not email or role not in ('sales', 'cashier', 'accounts', 'admin'):
+            flash('Enter a name, valid email, and role.', 'error')
+        elif len(password) < 12:
+            flash('Password must be at least 12 characters.', 'error')
+        else:
+            try:
+                with db() as con:
+                    con.execute('INSERT INTO users(name,email,password_hash,role) VALUES(?,?,?,?)',
+                                (name, email, generate_password_hash(password), role))
+                flash(f'{role.title()} account created for {email}.', 'success')
+                return redirect(url_for('admin_users'))
+            except Exception as exc:
+                if isinstance(exc, sqlite3.IntegrityError) or exc.__class__.__name__ in ('UniqueViolation', 'IntegrityError'):
+                    flash('An account with that email already exists.', 'error')
+                else:
+                    logging.exception('Admin user creation failed')
+                    flash('Could not create account. Check the server logs or contact support.', 'error')
+    with db() as con:
+        users = con.execute('SELECT id,name,email,role FROM users ORDER BY role,name').fetchall()
+    return render_template('admin_users.html', users=users)
+
 @app.route('/requests/new',methods=['GET','POST'])
 @roles_required('sales','admin')
 def new_request():
