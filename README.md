@@ -43,3 +43,14 @@ A passing local test run and a successful live integration test are still requir
 - Configure a strong random `SECRET_KEY`.
 - SMTP notifications are not operational until provider settings and end-to-end delivery are tested.
 - This remains a pilot MVP, not a security-approved production system for customer or banking data.
+
+
+## Refund workflow enhancements
+
+- **Duplicate review:** new submissions are checked against active requests using customer code, or customer name + refund type + amount (within ₹1). Matches are warnings, not automatic rejections; staff must explicitly confirm a legitimate separate request.
+- **Submission checklist:** request details show missing customer code or supporting-document reminders alongside core field completeness. Customer code and documents remain review prompts rather than hard requirements.
+- **Ageing / overdue queue:** dashboard shows request age and an overdue shortcut. The default SLA threshold is 3 days; configure `REFUND_SLA_DAYS` in the hosting environment to change it. Only open requests are counted as overdue; processed, closed and rejected requests are excluded.
+- **Accounts quick actions:** Accounts/Cashier/Admin can move requests to Under Review, Documents Required, or Approved for Payment without changing pages. Payment Processed still requires a payment date, UTR and processed amount.
+- **Email notifications:** existing SMTP notifications cover new requests and status changes; assignment changes also notify the request creator. Delivery requires valid SMTP environment settings and is logged. Configure SMTP credentials only in Render environment settings, never in the repository.
+
+The new checks are intended to flag possible problems for human review, not independently approve, reject or pay refunds. Validate role permissions and email delivery in a test deployment before using real customer or banking information.
