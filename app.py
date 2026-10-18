@@ -562,7 +562,9 @@ def update_request(rid):
     if not gate['ceo_approved'] or gate['status'] in ('Rejected','Closed'):
         flash('This refund is not eligible for Accounts processing until the CEO approves it.','error')
         return redirect(url_for('request_detail',rid=rid))
-    if status not in STATUSES: flash('Invalid status.','error'); return redirect(url_for('request_detail',rid=rid))
+    if status not in STATUSES or status in ('Pending CEO Approval','CEO Approved'):
+        flash('Invalid status. CEO approval statuses can only be set through the CEO decision workflow.','error')
+        return redirect(url_for('request_detail',rid=rid))
     utr=request.form.get('utr','').strip(); paydate=request.form.get('payment_date','').strip(); closure=request.form.get('closure_note','').strip()
     try: processed=float(request.form['processed_amount']) if request.form.get('processed_amount','').strip() else None
     except ValueError: flash('Processed amount must be numeric.','error'); return redirect(url_for('request_detail',rid=rid))
