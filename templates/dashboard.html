@@ -46,14 +46,14 @@
 </div>
 {% endif %}
 <section class="panel">
-  {% if session.role in ['accounts','admin'] %}<a class="btn btn-secondary" href="{{ url_for('export_refunds_csv',q=q,status=selected_status,sort=sort,overdue=1 if overdue_only else 0) }}">Export CSV</a>{% endif %}
+  {% if session.role in ['accounts','admin'] %}<a class="btn btn-secondary" href="{{ url_for('export_refunds_csv',q=q,status=selected_status,sort=sort,overdue=1 if overdue_only else 0,start_date=start_date,end_date=end_date) }}">Export CSV</a>{% endif %}
   <form class="filters" method="get">
-    <input name="q" value="{{ q }}" placeholder="Search request, customer code, location or UTR…">
+    <input name="q" value="{{ q }}" placeholder="Search request, customer code, location or UTR…">\n    <label class="sort-control">From date<input type="date" name="start_date" value="{{ start_date }}"></label>\n    <label class="sort-control">To date<input type="date" name="end_date" value="{{ end_date }}"></label>
     {% if overdue_only %}<input type="hidden" name="overdue" value="1">{% endif %}
     <label class="sort-control">Sort by<select name="sort"><option value="newest" {% if sort=='newest' %}selected{% endif %}>Newest first</option><option value="oldest" {% if sort=='oldest' %}selected{% endif %}>Oldest first</option></select></label>
     {% if session.role == 'accounts' %}<select name="approval" aria-label="CEO approval queue"><option value="all" {% if approval_filter=='all' %}selected{% endif %}>All CEO approval states</option><option value="approved" {% if approval_filter=='approved' %}selected{% endif %}>CEO-approved requests</option><option value="pending" {% if approval_filter=='pending' %}selected{% endif %}>Awaiting CEO approval</option></select>{% endif %}
     <select name="status"><option value="">All statuses</option>{% for s in STATUSES %}<option value="{{ s }}" {% if selected_status==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
-    <button class="btn btn-secondary">Filter</button><a class="btn btn-ghost" href="{{ url_for('dashboard') }}">Reset</a>
+    <button class="btn btn-secondary">Filter</button><a class="btn btn-ghost" href="{{ url_for('dashboard',view=view) }}">Reset</a>
   </form>
   {% if session.role == 'ceo' and selected_status == 'Pending CEO Approval' and requests %}
   <form method="post" action="{{ url_for('ceo_bulk_approve') }}" class="bulk-approve-form" onsubmit="return confirm('Approve all selected eligible refund requests? Each decision will be recorded in the activity log.');">
