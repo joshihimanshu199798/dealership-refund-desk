@@ -148,7 +148,15 @@ def create_user_command():
     click.echo(f'Created {role} user: {email}')
 
 @app.route('/healthz')
-def healthz(): return {'status':'ok'},200
+def healthz():
+    # Report healthy only when the configured database is reachable.
+    try:
+        with db() as con:
+            con.execute('SELECT 1').fetchone()
+        return {'status':'ok','database':'ok'},200
+    except Exception:
+        logging.exception('Health check database probe failed')
+        return {'status':'unavailable','database':'error'},503
 
 @app.route('/')
 def home(): return redirect(url_for('dashboard') if 'user_id' in session else url_for('login'))
