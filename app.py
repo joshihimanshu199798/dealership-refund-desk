@@ -90,6 +90,9 @@ def init_db():
         CREATE TABLE IF NOT EXISTS notification_log(id BIGSERIAL PRIMARY KEY, request_id BIGINT REFERENCES requests(id) ON DELETE SET NULL, recipient TEXT NOT NULL, subject TEXT NOT NULL, created_at TEXT NOT NULL, outcome TEXT NOT NULL, detail TEXT NOT NULL);
         """
         with db() as con:
+            # Gunicorn can import this module in multiple workers at startup.
+            # Serialize schema creation to prevent PostgreSQL catalog races.
+            con.execute('SELECT pg_advisory_xact_lock(741928361)')
             for statement in schema.split(';'):
                 if statement.strip():
                     con.execute(statement)
