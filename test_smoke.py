@@ -138,4 +138,15 @@ class AppSmokeTests(unittest.TestCase):
         self.assertIn(b'enter payment date, UTR/reference and processed amount',r.data)
         with self.app_module.db() as con: self.assertEqual(con.execute('SELECT status FROM requests WHERE id=?',(rid,)).fetchone()['status'],'CEO Approved')
 
+
+    def test_dashboard_control_centre_and_analytics_render(self):
+        self.login('admin@example.com','AdminDemo123!')
+        dashboard=self.client.get('/dashboard')
+        self.assertEqual(dashboard.status_code,200)
+        self.assertIn(b'Smart Refund Control Centre',dashboard.data)
+        analytics=self.client.get('/dashboard?view=analytics')
+        self.assertEqual(analytics.status_code,200)
+        self.assertIn(b'Six-month trend',analytics.data)
+        self.assertIn(b'Branch / location exposure',analytics.data)
+
 if __name__=='__main__': unittest.main()
