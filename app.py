@@ -443,8 +443,12 @@ def dashboard():
             priority_alerts.append({'title':'CEO decision required','detail':f"{r['request_no']} · {r['customer_name']}",'amount':float(r['requested_amount'] or 0),'age':age,'priority':0,'url':url_for('dashboard',view='requests',status='Pending CEO Approval')})
         if r['status']=='Documents Required':
             priority_alerts.append({'title':'Missing documents','detail':f"{r['request_no']} · {r['customer_name']}",'amount':float(r['requested_amount'] or 0),'age':age,'priority':1,'url':url_for('dashboard',view='requests',status='Documents Required')})
-        if age>=sla_days:
-            priority_alerts.append({'title':'SLA overdue','detail':f"{r['request_no']} · {r['customer_name']} · {age} days",'amount':float(r['requested_amount'] or 0),'age':age,'priority':2,'url':url_for('dashboard',view='requests',overdue=1)})
+        if age>=sla_days * 2:
+            priority_alerts.append({'title':'Critical SLA escalation','detail':f"{r['request_no']} · {r['customer_name']} · {age} days open",'amount':float(r['requested_amount'] or 0),'age':age,'priority':1,'url':url_for('dashboard',view='requests',overdue=1)})
+        elif age>=sla_days:
+            priority_alerts.append({'title':'SLA overdue','detail':f"{r['request_no']} · {r['customer_name']} · {age} days open",'amount':float(r['requested_amount'] or 0),'age':age,'priority':2,'url':url_for('dashboard',view='requests',overdue=1)})
+        elif age>=max(1,sla_days-1):
+            priority_alerts.append({'title':'SLA due soon','detail':f"{r['request_no']} · {r['customer_name']} · {age} days open",'amount':float(r['requested_amount'] or 0),'age':age,'priority':3,'url':url_for('dashboard',view='requests',status=r['status'])})
         if float(r['requested_amount'] or 0)>=high_value_threshold:
             priority_alerts.append({'title':'High-value refund','detail':f"{r['request_no']} · {r['customer_name']}",'amount':float(r['requested_amount'] or 0),'age':age,'priority':3,'url':url_for('request_detail',rid=r['id'])})
     priority_alerts.sort(key=lambda item:(item['priority'],-item['age'],-item['amount']))
@@ -470,6 +474,50 @@ def dashboard():
     analytics_statuses=[{'name':s,'count':counts[s]} for s in STATUSES if counts[s]]
     analytics={'requested_total':dashboard_stats['total_value'],'processed_total':dashboard_stats['processed_value'],'open_count':sum(1 for r in all_rows if is_open_status(r['status'])),'avg_age':dashboard_stats['avg_age'],'months':analytics_months,'branches':analytics_branches,'statuses':analytics_statuses}
     return render_template('dashboard.html',requests=visible,counts=counts,dashboard_stats=dashboard_stats,q=q,selected_status=status,sort=sort,approval_filter=approval_filter,overdue_count=overdue_count,overdue_only=request.args.get('overdue')=='1',sla_days=sla_days,view=view,start_date=start_date,end_date=end_date,visible_value=visible_value,visible_count=len(visible),priority_alerts=priority_alerts,analytics=analytics,high_value_threshold=high_value_threshold)
+
+
+@app.route('/executive')
+@roles_required('ceo','admin')
+def executive_control_centre():
+    """Executive-only snapshot of approvals, financial exposure, ageing and branch risk."""
+    from collections import defaultdict
+    with db() as con:
+        rows=con.execute("""SELECT r.*,u.name AS requester FROM requests r
+                            JOIN users u ON u.id=r.created_by
+                            ORDER BY r.created_at DESC""").fetchall()
+    sla_days=max(1,int(os.getenv('REFUND_SLA_DAYS','3')))
+    high_value_threshold=float(os.getenv('HIGH_VALUE_REFUND_THRESHOLD','100000'))
+    open_rows=[r for r in rows if is_open_status(r['status'])]
+    pending=[r for r in rows if not r['ceo_approved'] and r['status'] not in ('Rejected','Closed','Payment Processed')]
+    overdue=[r for r in open_rows if request_age_days(r)>=sla_days]
+    critical=[r for r in open_rows if request_age_days(r)>=sla_days*2]
+    unassigned=[r for r in open_rows if not (r['assigned_to'] or '').strip()]
+    branch_values=defaultdict(lambda:{'count':0,'value':0.0,'overdue':0})
+    for r in open_rows:
+        branch=(r['request_location'] or '').strip() or 'Unspecified location'
+        branch_values[branch]['count']+=1
+        branch_values[branch]['value']+=float(r['requested_amount'] or 0)
+        branch_values[branch]['overdue']+=int(request_age_days(r)>=sla_days)
+    branches=[{'name':name,**values} for name,values in branch_values.items()]
+    branches.sort(key=lambda x:(-x['value'],x['name'].lower()))
+    recent_pending=sorted(pending,key=lambda r:(-request_age_days(r),-float(r['requested_amount'] or 0)))[:10]
+    critical_cases=sorted(critical,key=lambda r:(-request_age_days(r),-float(r['requested_amount'] or 0)))[:10]
+    metrics={
+        'open_count':len(open_rows),
+        'open_value':sum(float(r['requested_amount'] or 0) for r in open_rows),
+        'pending_count':len(pending),
+        'pending_value':sum(float(r['requested_amount'] or 0) for r in pending),
+        'overdue_count':len(overdue),
+        'overdue_value':sum(float(r['requested_amount'] or 0) for r in overdue),
+        'critical_count':len(critical),
+        'critical_value':sum(float(r['requested_amount'] or 0) for r in critical),
+        'unassigned_count':len(unassigned),
+        'high_value_count':sum(1 for r in open_rows if float(r['requested_amount'] or 0)>=high_value_threshold),
+        'processed_value':sum(float(r['processed_amount'] or 0) for r in rows if r['status'] in ('Payment Processed','Closed')),
+    }
+    return render_template('executive.html',metrics=metrics,branches=branches[:10],
+                           pending=recent_pending,critical_cases=critical_cases,
+                           sla_days=sla_days,high_value_threshold=high_value_threshold)
 
 
 @app.route('/requests/ceo-bulk-approve', methods=['POST'])
