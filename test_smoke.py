@@ -67,6 +67,23 @@ class AppSmokeTests(unittest.TestCase):
         with self.app_module.db() as con:
             self.assertEqual(con.execute('SELECT status FROM requests WHERE id=?',(rid,)).fetchone()['status'],'Under Review')
 
+
+    def test_accounts_can_export_filtered_refund_csv(self):
+        self.login('sales@example.com','SalesDemo123!')
+        self.client.post('/requests/new',data={'customer_name':'CSV Test Customer','customer_code':'CSV-1','request_location':'Delhi Test Branch','refund_type':'Booking amount refund','requested_amount':'2500','reason':'CSV export test'},follow_redirects=True)
+        self.client.get('/logout')
+        self.login('accounts@example.com','AccountsDemo123!')
+        response=self.client.get('/reports/refunds.csv?status=Submitted')
+        self.assertEqual(response.status_code,200)
+        self.assertIn('text/csv',response.content_type)
+        self.assertIn(b'CSV Test Customer',response.data)
+        self.assertIn(b'Request number',response.data)
+
+    def test_sales_cannot_export_refund_csv(self):
+        self.login('sales@example.com','SalesDemo123!')
+        response=self.client.get('/reports/refunds.csv')
+        self.assertEqual(response.status_code,403)
+
     def test_sales_cannot_open_accounts_update(self):
         self.login('sales@example.com','SalesDemo123!')
         self.client.post('/requests/new',data={'customer_name':'Test Customer','request_location':'Delhi Test Branch','refund_type':'Excess ledger balance','requested_amount':'500','reason':'Test'},follow_redirects=True)
