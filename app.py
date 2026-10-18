@@ -111,6 +111,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS attachments(id INTEGER PRIMARY KEY AUTOINCREMENT, request_id INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE, uploaded_by INTEGER NOT NULL REFERENCES users(id), created_at TEXT NOT NULL, original_name TEXT NOT NULL, stored_name TEXT NOT NULL, category TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS audit_log(id INTEGER PRIMARY KEY AUTOINCREMENT, request_id INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id), created_at TEXT NOT NULL, action TEXT NOT NULL, details TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS notification_log(id INTEGER PRIMARY KEY AUTOINCREMENT, request_id INTEGER REFERENCES requests(id) ON DELETE SET NULL, recipient TEXT NOT NULL, subject TEXT NOT NULL, created_at TEXT NOT NULL, outcome TEXT NOT NULL, detail TEXT NOT NULL);
+            """)
             columns = [row['name'] for row in con.execute('PRAGMA table_info(requests)').fetchall()]
             if 'customer_code' not in columns:
                 con.execute('ALTER TABLE requests ADD COLUMN customer_code TEXT')
@@ -120,7 +121,6 @@ def init_db():
                 con.execute('ALTER TABLE requests ADD COLUMN account_no TEXT')
             if 'ifsc_code' not in columns:
                 con.execute('ALTER TABLE requests ADD COLUMN ifsc_code TEXT')
-            """)
     with db() as con:
         user_count = con.execute('SELECT COUNT(*) AS count FROM users').fetchone()['count']
         if os.getenv('DEMO_MODE', 'false').lower() in ('1','true','yes') and user_count == 0:
